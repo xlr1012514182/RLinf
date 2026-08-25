@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 import types
 from pathlib import Path
@@ -27,8 +28,31 @@ from rlinf.projects.fibocom_vla.config import (
     StackConfig,
 )
 from rlinf.projects.fibocom_vla.errors import ConfigurationError
-from rlinf.projects.fibocom_vla.factories import create_openpi_policy_from_env
+from rlinf.projects.fibocom_vla.factories import (
+    _validate_openpi_load_report,
+    create_openpi_policy_from_env,
+)
 from rlinf.projects.fibocom_vla.openpi_adapter import RLinfOpenPiChunkPolicy
+
+_OPENPI_SOURCE = (
+    Path(__file__).resolve().parents[4]
+    / "rlinf"
+    / "models"
+    / "embodiment"
+    / "openpi"
+    / "__init__.py"
+)
+_OPENPI_SPEC = importlib.util.spec_from_file_location(
+    "_fibocom_factory_openpi_loader", _OPENPI_SOURCE
+)
+assert _OPENPI_SPEC is not None and _OPENPI_SPEC.loader is not None
+_OPENPI_LOADER = importlib.util.module_from_spec(_OPENPI_SPEC)
+_OPENPI_SPEC.loader.exec_module(_OPENPI_LOADER)
+INFERENCE_IGNORED_AUXILIARY_KIND = _OPENPI_LOADER.INFERENCE_IGNORED_AUXILIARY_KIND
+INFERENCE_VALUE_HEAD_AUXILIARY_SCHEMA = (
+    _OPENPI_LOADER.INFERENCE_VALUE_HEAD_AUXILIARY_SCHEMA
+)
+checkpoint_load_key_classes = _OPENPI_LOADER.checkpoint_load_key_classes
 
 
 class _FakeModel:
@@ -85,6 +109,42 @@ def _base_only_config() -> StackConfig:
     )
 
 
+def test_factory_accepts_only_classified_training_value_head_auxiliary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    weights = (tmp_path / "weights.safetensors").resolve()
+    auxiliary = tuple(sorted(INFERENCE_VALUE_HEAD_AUXILIARY_SCHEMA))
+    report = {
+        "source_kind": "safetensors_shards",
+        "selected_paths": (str(weights),),
+        "missing_keys": (),
+        "unexpected_keys": auxiliary,
+        "ignored_auxiliary_keys": auxiliary,
+        "ignored_auxiliary_kind": INFERENCE_IGNORED_AUXILIARY_KIND,
+        "unresolved_unexpected_keys": (),
+        "data_asset_id": "physical-intelligence/robotwin",
+        "use_quantile_norm": True,
+    }
+    model = types.SimpleNamespace(_rlinf_checkpoint_load_report=report)
+    verified = types.SimpleNamespace(
+        manifest=types.SimpleNamespace(
+            runtime=types.SimpleNamespace(asset_id="physical-intelligence/robotwin")
+        ),
+        weight_paths=(weights,),
+    )
+    loader_module = types.ModuleType("rlinf.models.embodiment.openpi")
+    loader_module.checkpoint_load_key_classes = checkpoint_load_key_classes
+    monkeypatch.setitem(sys.modules, "rlinf.models.embodiment.openpi", loader_module)
+
+    _validate_openpi_load_report(model, verified)
+
+    report["unexpected_keys"] = (*auxiliary, "rogue.weight")
+    report["unresolved_unexpected_keys"] = ("rogue.weight",)
+    with pytest.raises(ConfigurationError, match="main state_dict"):
+        _validate_openpi_load_report(model, verified)
+
+
 def _patch_model_loader(
     monkeypatch,
     *,
@@ -106,6 +166,7 @@ def _patch_model_loader(
     embodiment.__path__ = []
     openpi = types.ModuleType("rlinf.models.embodiment.openpi")
     openpi.__path__ = []
+    openpi.checkpoint_load_key_classes = checkpoint_load_key_classes
 
     def get_model(config):
         model.received_config = config

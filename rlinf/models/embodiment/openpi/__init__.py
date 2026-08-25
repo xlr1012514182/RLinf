@@ -18,19 +18,85 @@ import os
 import torch
 from omegaconf import DictConfig
 
+from rlinf.projects.fibocom_vla.assets import (
+    INFERENCE_IGNORED_AUXILIARY_KIND,
+    checkpoint_load_key_classes,
+)
+
 CHECKPOINT_LOAD_REPORT_ATTR = "_rlinf_checkpoint_load_report"
+
+INFERENCE_VALUE_HEAD_AUXILIARY_SCHEMA = {
+    "value_head.mlp.0.bias": ((512,), torch.float32),
+    "value_head.mlp.0.weight": ((512, 1024), torch.float32),
+    "value_head.mlp.2.bias": ((256,), torch.float32),
+    "value_head.mlp.2.weight": ((256, 512), torch.float32),
+    "value_head.mlp.4.bias": ((128,), torch.float32),
+    "value_head.mlp.4.weight": ((128, 256), torch.float32),
+    "value_head.mlp.6.bias": ((1,), torch.float32),
+    "value_head.mlp.6.weight": ((1, 128), torch.float32),
+}
+
+
+def _inference_value_head_auxiliary_keys(model, state_dict, source_kind):
+    """Classify only the exact, source-evidenced RoboTwin training value head."""
+
+    config = getattr(model, "config", None)
+    required_model_fields = {
+        "config_name": "pi05_aloha_robotwin",
+        "pi05": True,
+        "action_horizon": 50,
+        "action_dim": 32,
+        "add_value_head": False,
+        "value_after_vlm": False,
+    }
+    if source_kind != "safetensors_shards" or config is None:
+        return ()
+    if any(
+        getattr(config, name, None) != expected
+        for name, expected in required_model_fields.items()
+    ):
+        return ()
+    observed = {key for key in state_dict if key.startswith("value_head.")}
+    expected = set(INFERENCE_VALUE_HEAD_AUXILIARY_SCHEMA)
+    if observed != expected:
+        return ()
+    for key, (shape, dtype) in INFERENCE_VALUE_HEAD_AUXILIARY_SCHEMA.items():
+        tensor = state_dict[key]
+        if not isinstance(tensor, torch.Tensor):
+            return ()
+        if tuple(tensor.shape) != shape or tensor.dtype != dtype:
+            return ()
+    return tuple(sorted(expected))
 
 
 def _load_state_dict_with_report(model, state_dict, *, source_kind, selected_paths):
-    """Load permissively while preserving every incompatible key for callers."""
+    """Load the exact main model and explicitly classify one training auxiliary."""
 
+    ignored_auxiliary = _inference_value_head_auxiliary_keys(
+        model, state_dict, source_kind
+    )
+    if ignored_auxiliary:
+        state_dict = {
+            key: value
+            for key, value in state_dict.items()
+            if key not in set(ignored_auxiliary)
+        }
     incompatible = model.load_state_dict(state_dict, strict=False)
+    unresolved = tuple(incompatible.unexpected_keys)
+    raw_unexpected = tuple(sorted((*unresolved, *ignored_auxiliary)))
     report = {
         "source_kind": str(source_kind),
         "selected_paths": tuple(os.path.abspath(path) for path in selected_paths),
         "missing_keys": tuple(incompatible.missing_keys),
-        "unexpected_keys": tuple(incompatible.unexpected_keys),
+        # Keep this raw: ignored training auxiliaries remain visible evidence.
+        "unexpected_keys": raw_unexpected,
+        "ignored_auxiliary_keys": ignored_auxiliary,
+        "ignored_auxiliary_kind": (
+            INFERENCE_IGNORED_AUXILIARY_KIND if ignored_auxiliary else None
+        ),
+        "unresolved_unexpected_keys": unresolved,
     }
+    checkpoint_load_key_classes(report)
     setattr(model, CHECKPOINT_LOAD_REPORT_ATTR, report)
     return report
 

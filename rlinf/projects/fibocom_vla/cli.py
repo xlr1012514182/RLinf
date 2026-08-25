@@ -213,8 +213,22 @@ def _openpi_checkpoint_smoke(args: argparse.Namespace) -> int:
     load_report = getattr(model, "_rlinf_checkpoint_load_report", None)
     if not isinstance(load_report, dict):
         raise RuntimeError("loaded model lacks its checkpoint compatibility report")
-    if load_report.get("missing_keys") or load_report.get("unexpected_keys"):
-        raise RuntimeError("checkpoint smoke observed incompatible state-dict keys")
+    from .assets import checkpoint_load_key_classes
+
+    try:
+        missing, unexpected, ignored_auxiliary, unresolved = (
+            checkpoint_load_key_classes(load_report)
+        )
+    except ValueError as error:
+        raise RuntimeError(
+            f"checkpoint smoke load report is invalid: {error}"
+        ) from error
+    if missing or unresolved:
+        raise RuntimeError(
+            "checkpoint smoke observed incompatible main state-dict keys: "
+            f"missing={missing}, raw_unexpected={unexpected}, "
+            f"ignored_auxiliary={ignored_auxiliary}, unresolved={unresolved}"
+        )
     if action.shape != (
         config.residual_rl.action_horizon,
         config.residual_rl.action_dim,
@@ -236,6 +250,13 @@ def _openpi_checkpoint_smoke(args: argparse.Namespace) -> int:
                 "selected_paths": load_report.get("selected_paths"),
                 "missing_keys": load_report.get("missing_keys"),
                 "unexpected_keys": load_report.get("unexpected_keys"),
+                "ignored_auxiliary_keys": load_report.get("ignored_auxiliary_keys", ()),
+                "ignored_auxiliary_kind": load_report.get("ignored_auxiliary_kind"),
+                "unresolved_unexpected_keys": load_report.get(
+                    "unresolved_unexpected_keys",
+                    load_report.get("unexpected_keys", ()),
+                ),
+                "main_state_dict_exact": not missing and not unresolved,
                 "data_asset_id": load_report.get("data_asset_id"),
                 "use_quantile_norm": load_report.get("use_quantile_norm"),
             },

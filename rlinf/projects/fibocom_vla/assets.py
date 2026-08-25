@@ -39,6 +39,62 @@ from .errors import ConfigurationError
 # deliberately not serialized and is excluded from dataclass equality/repr.
 _VERIFIED_CHECKPOINT_CAPABILITY = object()
 
+INFERENCE_IGNORED_AUXILIARY_KIND = "rlinf_training_value_head_1024_512_256_128_1_f32_v1"
+INFERENCE_VALUE_HEAD_AUXILIARY_KEYS = (
+    "value_head.mlp.0.bias",
+    "value_head.mlp.0.weight",
+    "value_head.mlp.2.bias",
+    "value_head.mlp.2.weight",
+    "value_head.mlp.4.bias",
+    "value_head.mlp.4.weight",
+    "value_head.mlp.6.bias",
+    "value_head.mlp.6.weight",
+)
+
+
+def checkpoint_load_key_classes(
+    report: Mapping[str, Any],
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """Validate and return raw, ignored, and unresolved load-report key sets."""
+
+    if not isinstance(report, Mapping):
+        raise ValueError("checkpoint load report must be a mapping")
+    missing = tuple(report.get("missing_keys", ()))
+    unexpected = tuple(report.get("unexpected_keys", ()))
+    ignored = tuple(report.get("ignored_auxiliary_keys", ()))
+    unresolved = tuple(report.get("unresolved_unexpected_keys", unexpected))
+    kind = report.get("ignored_auxiliary_kind")
+    sequences = {
+        "missing_keys": missing,
+        "unexpected_keys": unexpected,
+        "ignored_auxiliary_keys": ignored,
+        "unresolved_unexpected_keys": unresolved,
+    }
+    for name, values in sequences.items():
+        if any(not isinstance(value, str) or not value for value in values):
+            raise ValueError(f"checkpoint load report {name} is malformed")
+        if len(set(values)) != len(values):
+            raise ValueError(f"checkpoint load report {name} contains duplicates")
+    if set(ignored) & set(unresolved) or set(unexpected) != set(ignored) | set(
+        unresolved
+    ):
+        raise ValueError(
+            "checkpoint load report unexpected-key classification is inconsistent"
+        )
+    if ignored:
+        if (
+            kind != INFERENCE_IGNORED_AUXILIARY_KIND
+            or ignored != INFERENCE_VALUE_HEAD_AUXILIARY_KEYS
+        ):
+            raise ValueError(
+                "checkpoint load report contains an unauthorized auxiliary-key class"
+            )
+    elif kind is not None:
+        raise ValueError(
+            "checkpoint load report declares an auxiliary kind without ignored keys"
+        )
+    return missing, unexpected, ignored, unresolved
+
 
 def _sha256(path: Path, *, normalize_newlines: bool = False) -> str:
     digest = hashlib.sha256()
@@ -759,9 +815,12 @@ __all__ = [
     "AssetFile",
     "CameraContract",
     "CheckpointAssetManifest",
+    "INFERENCE_IGNORED_AUXILIARY_KIND",
+    "INFERENCE_VALUE_HEAD_AUXILIARY_KEYS",
     "RuntimeContract",
     "SourceFingerprint",
     "VerifiedCheckpointAssets",
+    "checkpoint_load_key_classes",
     "load_and_verify_checkpoint_assets",
     "require_verified_checkpoint_assets",
 ]

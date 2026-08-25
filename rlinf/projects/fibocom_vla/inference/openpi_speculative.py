@@ -338,12 +338,21 @@ def _require_exact_model_load(model: Any, verified_assets: Any) -> None:
         raise ConfigurationError(
             "loaded OpenPI target was not selected from verified safetensors shards"
         )
-    missing = tuple(report.get("missing_keys", ()))
-    unexpected = tuple(report.get("unexpected_keys", ()))
-    if missing or unexpected:
+    from ..assets import checkpoint_load_key_classes
+
+    try:
+        missing, unexpected, ignored_auxiliary, unresolved = (
+            checkpoint_load_key_classes(dict(report))
+        )
+    except ValueError as error:
         raise ConfigurationError(
-            "loaded OpenPI target is not exact-key compatible: "
-            f"missing={missing}, unexpected={unexpected}"
+            f"loaded OpenPI target has an invalid checkpoint report: {error}"
+        ) from error
+    if missing or unresolved:
+        raise ConfigurationError(
+            "loaded OpenPI target main state_dict is not exact-key compatible: "
+            f"missing={missing}, raw_unexpected={unexpected}, "
+            f"ignored_auxiliary={ignored_auxiliary}, unresolved={unresolved}"
         )
     selected = {
         Path(path).expanduser().resolve() for path in report.get("selected_paths", ())

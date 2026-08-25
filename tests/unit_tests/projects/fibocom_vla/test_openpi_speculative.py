@@ -14,7 +14,10 @@
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -33,11 +36,61 @@ from rlinf.projects.fibocom_vla.inference.openpi_speculative import (  # noqa: E
     OpenPITargetContract,
     VerifiedOpenPITarget,
     _issue_verified_draft_prediction,
+    _require_exact_model_load,
     triton_postprocess_batch,
 )
 from rlinf.projects.fibocom_vla.inference.triton_speculative import (  # noqa: E402
     TritonSpeculativeConfig,
 )
+
+_OPENPI_SOURCE = (
+    Path(__file__).resolve().parents[4]
+    / "rlinf"
+    / "models"
+    / "embodiment"
+    / "openpi"
+    / "__init__.py"
+)
+_OPENPI_SPEC = importlib.util.spec_from_file_location(
+    "_fibocom_speculative_openpi_loader", _OPENPI_SOURCE
+)
+assert _OPENPI_SPEC is not None and _OPENPI_SPEC.loader is not None
+_OPENPI_LOADER = importlib.util.module_from_spec(_OPENPI_SPEC)
+_OPENPI_SPEC.loader.exec_module(_OPENPI_LOADER)
+INFERENCE_IGNORED_AUXILIARY_KIND = _OPENPI_LOADER.INFERENCE_IGNORED_AUXILIARY_KIND
+INFERENCE_VALUE_HEAD_AUXILIARY_SCHEMA = (
+    _OPENPI_LOADER.INFERENCE_VALUE_HEAD_AUXILIARY_SCHEMA
+)
+
+
+def test_verified_target_accepts_only_classified_training_value_head(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    weights = (tmp_path / "weights.safetensors").resolve()
+    auxiliary = tuple(sorted(INFERENCE_VALUE_HEAD_AUXILIARY_SCHEMA))
+    report = {
+        "source_kind": "safetensors_shards",
+        "selected_paths": (str(weights),),
+        "missing_keys": (),
+        "unexpected_keys": auxiliary,
+        "ignored_auxiliary_keys": auxiliary,
+        "ignored_auxiliary_kind": INFERENCE_IGNORED_AUXILIARY_KIND,
+        "unresolved_unexpected_keys": (),
+    }
+    model = SimpleNamespace(_rlinf_checkpoint_load_report=report)
+    assets = SimpleNamespace(weight_paths=(weights,))
+    loader_module = SimpleNamespace(
+        checkpoint_load_key_classes=_OPENPI_LOADER.checkpoint_load_key_classes
+    )
+    monkeypatch.setitem(sys.modules, "rlinf.models.embodiment.openpi", loader_module)
+
+    _require_exact_model_load(model, assets)
+
+    report["unexpected_keys"] = (*auxiliary, "other.extra")
+    report["unresolved_unexpected_keys"] = ("other.extra",)
+    with pytest.raises(ConfigurationError, match="main state_dict"):
+        _require_exact_model_load(model, assets)
 
 
 class _FakeDynamicCache:

@@ -275,12 +275,21 @@ def _validate_openpi_load_report(model: Any, verified_assets: Any) -> None:
             "loaded OpenPI preprocessing conflicts with the manifest: "
             + "; ".join(report_mismatches)
         )
-    missing = tuple(report.get("missing_keys", ()))
-    unexpected = tuple(report.get("unexpected_keys", ()))
-    if missing or unexpected:
+    from .assets import checkpoint_load_key_classes
+
+    try:
+        missing, unexpected, ignored_auxiliary, unresolved = (
+            checkpoint_load_key_classes(dict(report))
+        )
+    except ValueError as error:
         raise ConfigurationError(
-            "OpenPI checkpoint state_dict is not exact-key compatible: "
-            f"missing={missing}, unexpected={unexpected}"
+            f"OpenPI checkpoint load report is invalid: {error}"
+        ) from error
+    if missing or unresolved:
+        raise ConfigurationError(
+            "OpenPI checkpoint main state_dict is not exact-key compatible: "
+            f"missing={missing}, raw_unexpected={unexpected}, "
+            f"ignored_auxiliary={ignored_auxiliary}, unresolved={unresolved}"
         )
     observed_paths = {
         Path(path).expanduser().resolve() for path in report.get("selected_paths", ())
