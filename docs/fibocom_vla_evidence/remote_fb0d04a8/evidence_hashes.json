@@ -1,0 +1,16 @@
+{
+  "algorithm": "sha256",
+  "files": {
+    "cuda_graph_smoke.json": "ba65eb141b808fb5a245151769935ea7e1694c438a742b39110d30473f0009bb",
+    "gpu_inventory_after.csv": "e84558a77bc659b7bae11ef61e3061d82218b9c53db589ffe28036e996bf7996",
+    "gpu_processes_after.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "mock_smoke.log": "3d953ef5941c9ca32cab7a72d495b5e1e5f9d4b6dbbbf1419345581d2078ea2b",
+    "pip_freeze.txt": "4ec66730953d4cde598261e8644afced10f8aebc7c59e8f0381b4cdff3c8cdd0",
+    "pytest_fibocom.log": "366a2c0ace321b4ad30a0ea06abfb8ad60c3a08f95a1040b1698f5ecece82a51",
+    "remote_run_manifest.json": "6780d79c8dd925d87149ec0fd3c12c368a4c92315034d6ebd3eeadb4538bf7de",
+    "rtc_vjp_smoke.json": "66c84761569d8e3ebd3fab1a92519a07588db81b448c01073c8b1d58798fd47f",
+    "source_archive.sha256": "4bfd1e017e59d124c89b5c990533429fd7f60c2ae8cc9feb5bc4e2070e34bd99"
+  },
+  "source_archive_content_sha256": "37055465fe04f26d220ffec2db57e1fea6e912ef7f222c1d41090d51fbdd37e1",
+  "source_commit": "fb0d04a84d6de49c2e2a2319b0e9bfeb8e43dd6c"
+}
