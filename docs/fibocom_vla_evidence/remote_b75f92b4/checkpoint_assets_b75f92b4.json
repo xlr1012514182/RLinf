@@ -1,0 +1,22 @@
+{
+  "verified": true,
+  "root": "/root/autodl-tmp/codex_fibocom_h50_20260825/assets/RLinf-Pi05-RoboTwin-SFT-adjust_bottle-fa8df6e",
+  "manifest": "/root/autodl-tmp/codex_fibocom_h50_20260825/source/source_b75f92b4/examples/embodiment/fibocom_vla/assets/rlinf_pi05_robotwin_adjust_bottle_h50.json",
+  "repository_id": "RLinf/RLinf-Pi05-RoboTwin-SFT-adjust_bottle",
+  "revision": "fa8df6ed103db0f5549c122f3a17c00ba6426c98",
+  "config_name": "pi05_aloha_robotwin",
+  "asset_id": "physical-intelligence/robotwin",
+  "norm_stats": "/root/autodl-tmp/codex_fibocom_h50_20260825/assets/RLinf-Pi05-RoboTwin-SFT-adjust_bottle-fa8df6e/physical-intelligence/robotwin/norm_stats.json",
+  "action_horizon": 50,
+  "model_action_dim": 32,
+  "environment_action_dim": 14,
+  "raw_state_dim": 14,
+  "model_state_dim": 32,
+  "camera_keys": [
+    "cam_high",
+    "cam_left_wrist",
+    "cam_right_wrist"
+  ],
+  "file_count": 17,
+  "hash_mode": "sha256_all_declared_files"
+}

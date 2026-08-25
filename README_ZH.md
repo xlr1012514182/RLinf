@@ -1,0 +1,118 @@
+# Fibocom π0.5 VLA 后训练与推理运行时栈
+
+[English](README.md) | [简体中文](README_ZH.md)
+
+**冻结基座残差 RL · 连续动作 speculative inference · CUDA/TensorRT 诊断 · RTC · fail-closed 真机接入**
+
+> 这是基于 [RLinf `release/v0.2`](https://github.com/RLinf/RLinf/tree/release/v0.2)
+> 上游 commit `46213e88` 的独立工程扩展，不是 RLinf 官方发行版，
+> 也不是上游 benchmark。父项目、来源 revision、第三方权重与
+> 本分支复现证据始终分开标注。
+
+本分支把来源锁定的 RLinf π0.5 RoboTwin 策略组织成可审计的后训练
+与部署栈。核心不是只跑通 demo，而是在 checkpoint、transform、Draft、
+机器人映射或运动授权不一致时提前拒绝，避免静默改变策略语义。
+
+## 已实现内容
+
+| 技术主线 | 实现 | 当前边界 |
+|---|---|---|
+| **残差 RL 后训练** | 冻结 π0.5 参考策略、H=50/A=14 下 1,819,897 参数有界残差 actor、独立 V head、Twin-Q 辅助损失、轨迹级 GAE、单轮 PPO、rollout/checkpoint 血缘 | 组件已验证；本仓未复现报告的真机任务提升 |
+| **CUDA Graph / TensorRT** | factory 接线的 vision tower/projector graph capture、bit-exact 门与 eager 回退；TensorRT 10 build/runtime manifest、parity、ULP 和逐层差异诊断 | 契约已验证；无 checkpoint-bound π0.5 engine 或延迟结论 |
+| **Speculative inference** | 签名 π0.5 Draft 门、单次 prefill 的 B×K OpenPI verifier、连续 prefix 接受、同轮主模型接管、Torch/Triton 后处理 | production 装配路径已实现；本仓未附带已训练/评测/签名的 π0.5 Draft |
+| **RTC** | 异步 action-chunk planner、已承诺 prefix 硬冻结、模型空间 overlap VJP、指数衰减权重和分离计时 | 合成组件已验证；checkpoint/真机计时待完成 |
+| **机器人接入** | SO101、Dobot Nova、ROS2 和相机 backend；双 Aloha H50×14 到 SO101-6D/Nova-7D 严格 retargeting 边界 | adapter 与锁定模板已验证；任务 engine、标定和真机运动待完成 |
+
+## 来源锁定的模型目标
+
+| 字段 | 契约 |
+|---|---|
+| 主权重 | `RLinf/RLinf-Pi05-RoboTwin-SFT-adjust_bottle@fa8df6ed103db0f5549c122f3a17c00ba6426c98` |
+| 已注册运行时 | `pi05_aloha_robotwin`，H=50 |
+| 归一化统计 | `physical-intelligence/robotwin`，quantile normalization |
+| 几何 | raw state/action 14；归一化后 model state/action 32 |
+| 相机 | `cam_high`、`cam_left_wrist`、`cam_right_wrist` |
+| Draft 来源 | `Dexmal/RealtimeVLA-Flash@77b9a6f8`；只针对 π0 LIBERO，对本 π0.5 target 仅能 warm-start |
+
+Publisher checkpoint metadata 记录的是 H=10。本仓不修改这些字节，而是核验
+原始权重，再通过 SHA-256/源码指纹单独绑定 RLinf 已注册 H=50 运行时、
+官方 RoboTwin YAML、norm stats、相机映射和 Aloha transform。
+
+## 当前验证状态
+
+已封存的实现基线为 `b75f92b4`：
+
+| 验证门 | 结果 |
+|---|---|
+| 本地 Windows/Python 3.10 专项测试 | **322 collected，317 passed，5 skipped，2 warnings** |
+| 远程 Linux 专项测试 | **321 passed，1 skipped** |
+| 主 checkpoint manifest | 完整的固定 revision 文件 hash 与 transform/runtime 契约已核验 |
+| 主 checkpoint H=50 forward | 一次固定 seed 合成观测 smoke **已通过**；3,616,757,520 参数，主 backbone 精确加载，辅助 value head 显式分类，environment `[50,14]`，model `[50,32]`，输出有限 |
+| 真机/仿真任务质量 | 未按 claim-grade paired protocol 运行 |
+
+严格 load report 中主模型 missing 与 unresolved unexpected key 均为 0。Raw report
+完整保留 8 个 F32 RLinf 训练 value-head key，并将它们显式分类为可忽略辅助
+head；这不等于静默放宽主 backbone 加载。Smoke 使用 seed 17 与一个合成观测，
+只证明有界的 load/transform/forward plumbing，不证明延迟、吞吐、仿真成功率或真机任务质量。
+
+证据目录中较早的 CUDA 数字只是独立合成组件测量。简历中的
+75.0%→96.9%、48.2→42.8 ms、TensorRT 1.5×、58.0→19.1 ms 与 RTC 5.6 s→4 ms
+属于历史、上游或目标声明，不作为本分支已复现结果。
+
+## 架构
+
+```mermaid
+flowchart LR
+    O["3 相机 + 机器人状态 + 指令"] --> G["时效 / 偏斜 / 血缘门"]
+    G --> P["来源锁定的冻结 π0.5"]
+    P --> B["基座 profile"]
+    P --> R["残差 RL profile"]
+    P --> S["签名 Draft speculative profile"]
+    D["已训练 + 评测 + Ed25519 审批的 Draft"] --> S
+    B --> Q["同步或 RTC planner"]
+    R --> Q
+    S --> Q
+    Q --> A["双 Aloha 到真机 retargeting"]
+    A --> C["限位 / 时效 / 运动授权门"]
+    C --> H["SO101 / Nova / ROS2"]
+```
+
+Residual 与 speculative profile 故意互斥：为精确冻结主策略签名的 Draft verifier
+不能授权经残差 actor 修改后的 action policy。非线性单臂 retargeting 也会
+关闭 native RTC，因为其逆向模型空间映射无法通用保证。
+
+## 安全 Quick Start
+
+```bash
+bash requirements/install.sh embodied --model openpi --env robotwin --install-rlinf
+
+python -m rlinf.projects.fibocom_vla.cli validate-config \
+  --config examples/embodiment/fibocom_vla/config/robotwin_pi05_h50_dry_run.json
+
+python -m rlinf.projects.fibocom_vla.cli mock-smoke \
+  --config examples/embodiment/fibocom_vla/config/mock.json --steps 16
+
+python -m pytest -q tests/unit_tests/projects/fibocom_vla
+```
+
+仓库内 SO101/Nova 配置被刻意锁定为无法运动。只修改 `dry_run`
+不会使它们变得安全；仍必须提供经审阅的 retargeting engine、匹配的标定 ID、
+物理限位、endpoint、feedback、显式 `--allow-motion` 和有监护的分阶段验证。
+
+## 文档与证据
+
+- [English 完整实现指南](examples/embodiment/fibocom_vla/README.md)
+- [中文完整实现指南](examples/embodiment/fibocom_vla/README_ZH.md)
+- [声明—证据边界](docs/fibocom_vla_evidence/claim_boundary.md)
+- [复现矩阵](docs/fibocom_vla_evidence/reproduction_matrix.csv)
+- [固定来源身份](docs/fibocom_vla_evidence/source_lock.json)
+- [当前本地验证记录](docs/fibocom_vla_evidence/local_validation_20260826.md)
+- [当前远程验证记录](docs/fibocom_vla_evidence/remote_validation_20260826.md)
+- [封存的主 checkpoint smoke JSON](docs/fibocom_vla_evidence/remote_b75f92b4/openpi_checkpoint_smoke_b75f92b4.json)
+
+## 上游血缘与许可
+
+实现基座来自官方 [RLinf 仓库](https://github.com/RLinf/RLinf)。从当前 RLinf
+选择的 OpenPI/RoboTwin 契约使用独立来源锁定，详见完整指南。
+本分支代码沿用父项目 [Apache-2.0 License](LICENSE)。第三方 checkpoint
+仍遵守其自身条款，本仓不重新发布或重新许可它们的权重。

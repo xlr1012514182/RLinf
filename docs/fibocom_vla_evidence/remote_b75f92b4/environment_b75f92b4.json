@@ -1,0 +1,24 @@
+{
+  "captured_at_utc": "2026-08-25T18:02:04.859914+00:00",
+  "cuda_available": true,
+  "cuda_runtime": "12.8",
+  "gpu": "NVIDIA GeForce RTX 4080 SUPER",
+  "packages": {
+    "gcsfs": "2026.7.0",
+    "jax": "0.5.3",
+    "jaxlib": "0.5.3",
+    "numpy": "1.26.4",
+    "numpydantic": "1.6.7",
+    "orbax-checkpoint": "0.11.13",
+    "pydantic": "2.10.6",
+    "rlinf-openpi": "0.1.1",
+    "rlinf-transformer-openpi": "4.53.2",
+    "safetensors": "0.5.3",
+    "tokenizers": "0.21.4",
+    "torch": "2.8.0+cu128"
+  },
+  "platform": "Linux-5.15.0-25-generic-x86_64-with-glibc2.35",
+  "python": "3.12.3 | packaged by Anaconda, Inc. | (main, May  6 2024, 19:46:43) [GCC 11.2.0]",
+  "source_revision": "b75f92b4",
+  "torch": "2.8.0+cu128"
+}

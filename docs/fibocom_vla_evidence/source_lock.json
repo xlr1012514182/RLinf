@@ -9,7 +9,8 @@
     {
       "repository": "https://github.com/RLinf/RLinf",
       "branch": "main",
-      "commit": "230ea79b4b0e1c1cbe13a3079baa14b93b441dac"
+      "commit": "12881eda376c8407bd85e4329e64b008d6aa9640",
+      "verified_by": "git ls-remote refs/heads/main on 2026-08-26"
     },
     {
       "repository": "https://github.com/flashrt-project/FlashRT",
