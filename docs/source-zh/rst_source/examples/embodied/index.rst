@@ -288,4 +288,4 @@
    sft_vlm
    co_training
    dsrl
-
+   fibocom_vla

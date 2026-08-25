@@ -24,20 +24,26 @@ from torch import Tensor, nn
 
 from ..config import ResidualRLConfig
 from ..errors import ConfigurationError, ShapeMismatchError
+from .trajectory import ActionSource
 
 
 def trainable_parameter_count(module: nn.Module) -> int:
     """Count trainable scalar parameters."""
 
-    return sum(parameter.numel() for parameter in module.parameters() if parameter.requires_grad)
+    return sum(
+        parameter.numel()
+        for parameter in module.parameters()
+        if parameter.requires_grad
+    )
 
 
 class ResidualActor(nn.Module):
     """Parameter-budgeted actor that predicts a local action-chunk residual.
 
-    With the default ``1024``-D feature, ``50 x 7`` action chunk, hidden width
-    ``866``, and bottleneck ``512``, this module has 1,817,310 trainable
-    parameters (including log standard deviation), which rounds to 1.82M.
+    With the audited ``2048``-D π0.5 prefix-mean feature, ``50 x 7`` action
+    chunk, hidden width ``562``, and bottleneck ``512``, this module has
+    1,818,542 trainable parameters (including log standard deviation), which
+    rounds to 1.82M. The twin-Q and value heads are counted separately.
     """
 
     def __init__(self, config: ResidualRLConfig) -> None:
@@ -55,7 +61,9 @@ class ResidualActor(nn.Module):
             nn.GELU(),
             nn.Linear(config.actor_bottleneck_dim, action_size),
         )
-        self.log_std = nn.Parameter(torch.full((config.action_horizon, config.action_dim), -2.3))
+        self.log_std = nn.Parameter(
+            torch.full((config.action_horizon, config.action_dim), -2.3)
+        )
         output_layer = self.network[-1]
         nn.init.normal_(output_layer.weight, mean=0.0, std=1e-4)
         nn.init.zeros_(output_layer.bias)
@@ -73,7 +81,9 @@ class ResidualActor(nn.Module):
 
         return trainable_parameter_count(self)
 
-    def forward(self, features: Tensor, reference_actions: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(
+        self, features: Tensor, reference_actions: Tensor
+    ) -> tuple[Tensor, Tensor]:
         """Return pre-tanh residual location and broadcast log standard deviation."""
 
         expected_reference = (
@@ -153,6 +163,15 @@ class BoundedResidualDistribution:
     def log_prob(self, residual: Tensor) -> Tensor:
         """Evaluate a bounded residual with inverse-tanh correction."""
 
+        if residual.shape != self.location.shape:
+            raise ShapeMismatchError("residual must match distribution shape")
+        if torch.any(residual < self.low - self._EPSILON) or torch.any(
+            residual > self.high + self._EPSILON
+        ):
+            raise ValueError(
+                "residual lies outside this reference-conditioned distribution; "
+                "execution-time guard/clamp/rescue actions have no PPO log-probability"
+            )
         unit = ((residual - self.midpoint) / self.half_range).clamp(
             -1.0 + self._EPSILON, 1.0 - self._EPSILON
         )
@@ -214,6 +233,56 @@ class TwinQCritic(nn.Module):
         )
 
 
+class StateValueCritic(nn.Module):
+    """State-value baseline independent of the residual action and twin-Q.
+
+    PPO/GAE needs an estimate of ``V(s)`` under the behavior policy. Reusing
+    ``min Q(s, mode(policy))`` silently substitutes a deterministic action
+    value and couples advantages to the auxiliary Q objective. This head is
+    conditioned only on cached frozen-base features and the reference chunk,
+    making that separation explicit and directly testable.
+    """
+
+    def __init__(
+        self,
+        config: ResidualRLConfig,
+        hidden_dims: tuple[int, int] = (512, 256),
+    ) -> None:
+        super().__init__()
+        self.config = config
+        action_size = config.action_horizon * config.action_dim
+        input_dim = config.feature_dim + action_size
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, hidden_dims[0]),
+            nn.LayerNorm(hidden_dims[0]),
+            nn.SiLU(),
+            nn.Linear(hidden_dims[0], hidden_dims[1]),
+            nn.LayerNorm(hidden_dims[1]),
+            nn.SiLU(),
+            nn.Linear(hidden_dims[1], 1),
+        )
+
+    def forward(self, features: Tensor, reference_actions: Tensor) -> Tensor:
+        """Estimate ``V(s)`` without reading an executed or actor-mode action."""
+
+        expected_reference = (
+            self.config.action_horizon,
+            self.config.action_dim,
+        )
+        if features.shape[-1] != self.config.feature_dim:
+            raise ShapeMismatchError(
+                f"expected feature dim {self.config.feature_dim}, got {features.shape}"
+            )
+        if reference_actions.shape[-2:] != expected_reference:
+            raise ShapeMismatchError(
+                f"expected action tail {expected_reference}, got {reference_actions.shape}"
+            )
+        if features.shape[:-1] != reference_actions.shape[:-2]:
+            raise ShapeMismatchError("feature and reference batch axes differ")
+        inputs = torch.cat((features, reference_actions.flatten(start_dim=-2)), dim=-1)
+        return self.network(inputs).squeeze(-1)
+
+
 class FrozenBaseResidualPolicy(nn.Module):
     """Compose an immutable VLA base with the trainable local residual actor.
 
@@ -246,7 +315,11 @@ class FrozenBaseResidualPolicy(nn.Module):
     def assert_base_frozen(self) -> None:
         """Fail fast if any optimizer accidentally re-enabled the VLA base."""
 
-        trainable = [name for name, value in self.base_policy.named_parameters() if value.requires_grad]
+        trainable = [
+            name
+            for name, value in self.base_policy.named_parameters()
+            if value.requires_grad
+        ]
         if trainable:
             raise RuntimeError(f"base policy is not frozen: {trainable[:5]}")
 
@@ -269,24 +342,36 @@ class FrozenBaseResidualPolicy(nn.Module):
             location, log_std, reference_actions, self.actor.config
         )
 
+    @torch.no_grad()
     def act(
         self, observation: Any, *, deterministic: bool = False
     ) -> Mapping[str, Tensor]:
-        """Produce adjusted action, reference, residual, features, and log-prob."""
+        """Produce an action and provenance-safe behavior-policy metadata.
+
+        A deterministic mode action is still sourced from the policy, but is
+        deliberately excluded from PPO because it was not sampled from the
+        bounded behavior distribution.
+        """
 
         features, reference = self.encode_reference(observation)
         distribution = self.distribution(features, reference)
         if deterministic:
             residual = distribution.mode()
-            log_prob = distribution.log_prob(residual)
+            log_prob = torch.full_like(distribution.log_prob(residual), torch.nan)
+            policy_mask = torch.zeros_like(log_prob, dtype=torch.bool)
         else:
             residual, log_prob = distribution.rsample()
+            policy_mask = torch.ones_like(log_prob, dtype=torch.bool)
+        action_source = torch.full_like(log_prob, ActionSource.POLICY, dtype=torch.int8)
         return {
             "actions": reference + residual,
             "reference_actions": reference,
             "residual_actions": residual,
             "features": features,
             "log_probs": log_prob,
+            "old_log_probs": log_prob,
+            "action_source": action_source,
+            "policy_mask": policy_mask,
         }
 
 

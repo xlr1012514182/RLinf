@@ -54,13 +54,9 @@ class RobotState:
             )
         object.__setattr__(self, "joint_positions", positions)
         if self.joint_velocities is not None:
-            velocities = _as_f32(
-                self.joint_velocities, name="joint_velocities"
-            )
+            velocities = _as_f32(self.joint_velocities, name="joint_velocities")
             if velocities.shape != positions.shape:
-                raise ShapeMismatchError(
-                    "joint_velocities must match joint_positions"
-                )
+                raise ShapeMismatchError("joint_velocities must match joint_positions")
             object.__setattr__(self, "joint_velocities", velocities)
 
 
@@ -95,12 +91,21 @@ class Observation:
 
 @dataclass(frozen=True)
 class ActionChunk:
-    """A time-indexed sequence of robot actions in ``[horizon, action_dim]``."""
+    """A time-indexed sequence of actions plus optional aligned model values.
+
+    ``values`` are the environment/policy output consumed by downstream
+    adapters. ``model_values`` may retain a higher-dimensional normalized VLA
+    chunk from the same forward pass. It is time-aligned but never assumed to
+    share the environment action dimension. Native denoising-time RTC may use
+    it; any downstream action rewrite must clear it unless correspondence is
+    explicitly preserved.
+    """
 
     values: NDArray[np.float32]
     period_s: float
     source_observation_ns: int
     generated_ns: int = field(default_factory=time.monotonic_ns)
+    model_values: NDArray[np.float32] | None = None
     committed_prefix: int = 0
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
@@ -110,11 +115,34 @@ class ActionChunk:
             raise ShapeMismatchError(
                 f"action chunk must be non-empty [T, A], got {values.shape}"
             )
-        if self.period_s <= 0:
-            raise ShapeMismatchError("period_s must be positive")
+        if not np.isfinite(self.period_s) or self.period_s <= 0:
+            raise ShapeMismatchError("period_s must be finite and positive")
+        timestamps = (self.source_observation_ns, self.generated_ns)
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, np.integer))
+            or value <= 0
+            for value in timestamps
+        ):
+            raise ShapeMismatchError("action timestamps must be positive integers")
+        if self.generated_ns < self.source_observation_ns:
+            raise ShapeMismatchError(
+                "generated_ns cannot predate source_observation_ns"
+            )
         if not 0 <= self.committed_prefix <= values.shape[0]:
             raise ShapeMismatchError("committed_prefix is outside the action chunk")
         object.__setattr__(self, "values", values)
+        if self.model_values is not None:
+            model_values = _as_f32(self.model_values, name="model action chunk")
+            if (
+                model_values.ndim != 2
+                or model_values.shape[0] != values.shape[0]
+                or model_values.shape[1] <= 0
+            ):
+                raise ShapeMismatchError(
+                    "model_values must be non-empty [T, A_model] and align with values"
+                )
+            object.__setattr__(self, "model_values", model_values)
 
     @property
     def horizon(self) -> int:
@@ -137,6 +165,10 @@ class ActionChunk:
             values=self.values[start:].copy(),
             period_s=self.period_s,
             source_observation_ns=self.source_observation_ns,
+            generated_ns=self.generated_ns,
+            model_values=(
+                None if self.model_values is None else self.model_values[start:].copy()
+            ),
             committed_prefix=max(0, self.committed_prefix - start),
             metadata=self.metadata,
         )
@@ -153,8 +185,8 @@ class PolicyOutput:
     diagnostics: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.model_latency_ms < 0:
-            raise ShapeMismatchError("model_latency_ms must be non-negative")
+        if not np.isfinite(self.model_latency_ms) or self.model_latency_ms < 0:
+            raise ShapeMismatchError("model_latency_ms must be finite and non-negative")
 
 
 @runtime_checkable
@@ -185,6 +217,9 @@ class RobotBackend(Protocol):
     def stop(self) -> None:
         """Stop motion using the safest backend-specific operation."""
 
+    def emergency_stop(self) -> None:
+        """Request the backend's emergency stop after an execution failure."""
+
     def disconnect(self) -> None:
         """Release the robot connection."""
 
@@ -200,7 +235,9 @@ class CameraBackend(Protocol):
     def connect(self) -> None:
         """Open the camera stream."""
 
-    def read(self, timeout_s: float = 1.0) -> tuple[NDArray[Any], int, Mapping[str, Any]]:
+    def read(
+        self, timeout_s: float = 1.0
+    ) -> tuple[NDArray[Any], int, Mapping[str, Any]]:
         """Return image, monotonic timestamp, and backend metadata."""
 
     def disconnect(self) -> None:

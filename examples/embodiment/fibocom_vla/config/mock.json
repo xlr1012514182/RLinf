@@ -1,0 +1,62 @@
+{
+  "residual_rl": {
+    "enabled": false,
+    "feature_dim": 2048,
+    "action_horizon": 50,
+    "action_dim": 7,
+    "actor_hidden_dim": 562,
+    "actor_bottleneck_dim": 512,
+    "target_actor_parameters": 1820000,
+    "parameter_tolerance": 10000,
+    "ppo_epochs": 1
+  },
+  "speculative": {
+    "enabled": false,
+    "minimum_prefix": 2,
+    "fallback_acceptance_ratio": 0.25
+  },
+  "rtc": {
+    "enabled": true,
+    "execution_horizon": 8,
+    "queue_threshold": 2,
+    "overlap_horizon": 16,
+    "guidance_weight": 1.0,
+    "guidance_decay": 0.82
+  },
+  "robot": {
+    "backend": "mock",
+    "action_dim": 7,
+    "control_hz": 20.0,
+    "maximum_source_age_s": 1.0,
+    "maximum_generation_age_s": 0.75,
+    "maximum_observation_age_s": 0.5,
+    "maximum_state_camera_skew_ms": 75.0,
+    "joint_names": ["j1", "j2", "j3", "j4", "j5", "j6", "gripper"],
+    "joint_lower": [-1, -1, -1, -1, -1, -1, -1],
+    "joint_upper": [1, 1, 1, 1, 1, 1, 1],
+    "max_step": [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+    "dry_run": true,
+    "action_adapter": {
+      "implementation": "generic_affine_joint",
+      "action_mode": "absolute",
+      "coordinate_modes": ["absolute", "absolute", "absolute", "absolute", "absolute", "absolute", "absolute"],
+      "policy_frame": "joint",
+      "policy_dim": 7,
+      "policy_names": ["j1", "j2", "j3", "j4", "j5", "j6", "gripper"],
+      "policy_units": ["normalized", "normalized", "normalized", "normalized", "normalized", "normalized", "normalized"],
+      "policy_state_frame": "joint",
+      "policy_state_dim": 7,
+      "policy_state_names": ["j1", "j2", "j3", "j4", "j5", "j6", "gripper"],
+      "required_cameras": ["main"],
+      "robot_units": ["normalized", "normalized", "normalized", "normalized", "normalized", "normalized", "normalized"],
+      "robot_from_policy": [0, 1, 2, 3, 4, 5, 6],
+      "scale": [1, 1, 1, 1, 1, 1, 1],
+      "offset": [0, 0, 0, 0, 0, 0, 0],
+      "validated": false,
+      "calibration_id": "UNVALIDATED_DRY_RUN_IDENTITY"
+    }
+  },
+  "cameras": [
+    {"name": "main", "backend": "mock", "width": 64, "height": 64, "fps": 30}
+  ]
+}

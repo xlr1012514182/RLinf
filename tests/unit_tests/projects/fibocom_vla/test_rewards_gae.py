@@ -51,4 +51,3 @@ def test_masked_normalization_keeps_padding_zero() -> None:
     normalized = normalize_masked(values, mask)
     np.testing.assert_allclose(normalized[0, :2], [-1.0, 1.0], atol=1e-6)
     assert normalized[0, 2] == 0.0
-

@@ -35,8 +35,8 @@ class CallableChunkPolicy:
         period_s: float,
         path: str = "callable",
     ) -> None:
-        if period_s <= 0:
-            raise ValueError("period_s must be positive")
+        if not np.isfinite(period_s) or period_s <= 0:
+            raise ValueError("period_s must be finite and positive")
         self.function = function
         self.period_s = period_s
         self.path = path
@@ -69,7 +69,12 @@ class MockChunkPolicy:
         period_s: float,
         amplitude: float = 0.02,
     ) -> None:
-        if min(horizon, action_dim, period_s) <= 0 or amplitude < 0:
+        if (
+            min(horizon, action_dim, period_s) <= 0
+            or not np.isfinite(period_s)
+            or not np.isfinite(amplitude)
+            or amplitude < 0
+        ):
             raise ValueError("invalid mock policy geometry")
         self.horizon = horizon
         self.action_dim = action_dim

@@ -57,10 +57,19 @@ class JointRobotBase(ABC):
     def connect(self) -> None:
         """Connect once without issuing a target command."""
 
-        if self._connected:
-            return
-        self._connect_impl()
-        self._connected = True
+        with self._command_lock:
+            if self._connected:
+                return
+            try:
+                self._connect_impl()
+            except Exception:
+                try:
+                    self._disconnect_impl()
+                except Exception:
+                    logger.exception("robot connection rollback failed")
+                self._connected = False
+                raise
+            self._connected = True
 
     def read_state(self) -> RobotState:
         """Read and validate current state, latching faults in the safety gate."""
@@ -78,8 +87,8 @@ class JointRobotBase(ABC):
     ) -> NDArray[np.float32]:
         """Filter one target and either log dry-run or send it atomically."""
 
-        if period_s <= 0:
-            raise ValueError("period_s must be positive")
+        if not np.isfinite(period_s) or period_s <= 0:
+            raise ValueError("period_s must be finite and positive")
         if not self._connected:
             raise HardwareNotReadyError("robot is not connected")
         with self._command_lock:
@@ -97,33 +106,68 @@ class JointRobotBase(ABC):
             return actual
 
     def stop(self) -> None:
-        """Latch software stop, then invoke the backend's safest stop operation."""
+        """Latch software stop, then request a graceful backend halt.
+
+        ``dry_run`` is a read-only hardware lifecycle: it may connect and read
+        state, but it must not send even a hold/stop command to an actuator.
+        """
 
         self.safety.engage_estop("stop requested")
-        if self._connected:
-            self._stop_impl()
+        with self._command_lock:
+            if self._connected and not self.config.dry_run:
+                self._stop_impl()
+            elif self._connected:
+                logger.info("dry-run: suppressing hardware stop command")
+
+    def emergency_stop(self) -> None:
+        """Latch software stop and invoke the backend emergency path.
+
+        No emergency command is sent in ``dry_run`` because that mode never
+        authorizes an actuator write in the first place.
+        """
+
+        self.safety.engage_estop("emergency stop requested")
+        with self._command_lock:
+            if self._connected and not self.config.dry_run:
+                self._emergency_stop_impl()
+            elif self._connected:
+                logger.info("dry-run: suppressing hardware emergency-stop command")
 
     def disconnect(self) -> None:
         """Release the connection idempotently."""
 
-        if not self._connected:
-            return
-        try:
-            self._disconnect_impl()
-        finally:
-            self._connected = False
+        with self._command_lock:
+            if not self._connected:
+                return
+            try:
+                self._disconnect_impl()
+            finally:
+                self._connected = False
 
     def __enter__(self) -> "JointRobotBase":
         self.connect()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
-        if exc_value is not None:
-            try:
-                self.stop()
-            except Exception:
-                logger.exception("robot stop failed while handling another exception")
-        self.disconnect()
+        cleanup_errors: list[Exception] = []
+        try:
+            if self._connected:
+                if exc_value is None:
+                    self.stop()
+                else:
+                    self.emergency_stop()
+        except Exception as error:
+            cleanup_errors.append(error)
+            logger.exception("robot stop failed during context-manager teardown")
+        try:
+            self.disconnect()
+        except Exception as error:
+            cleanup_errors.append(error)
+            logger.exception("robot disconnect failed during context-manager teardown")
+        if cleanup_errors and exc_value is None:
+            raise RuntimeError(
+                "robot context-manager teardown failed"
+            ) from cleanup_errors[0]
 
     @abstractmethod
     def _connect_impl(self) -> None: ...
@@ -138,6 +182,11 @@ class JointRobotBase(ABC):
 
     @abstractmethod
     def _stop_impl(self) -> None: ...
+
+    def _emergency_stop_impl(self) -> None:
+        """Default emergency path for backends without a stronger primitive."""
+
+        self._stop_impl()
 
     @abstractmethod
     def _disconnect_impl(self) -> None: ...

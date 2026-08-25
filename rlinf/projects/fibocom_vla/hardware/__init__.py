@@ -14,6 +14,17 @@
 
 """Lazy-loaded robot and camera backends."""
 
+from .action_adapter import PolicyRobotActionAdapter
 from .factory import create_cameras, create_robot
+from .policy_adapter import (
+    PolicyRobotAdapterPolicy,
+    load_policy_robot_adapter,
+)
 
-__all__ = ["create_cameras", "create_robot"]
+__all__ = [
+    "PolicyRobotActionAdapter",
+    "PolicyRobotAdapterPolicy",
+    "create_cameras",
+    "create_robot",
+    "load_policy_robot_adapter",
+]

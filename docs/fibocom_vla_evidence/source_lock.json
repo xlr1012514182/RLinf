@@ -1,0 +1,66 @@
+{
+  "generated_date": "2026-08-25",
+  "implementation_base": {
+    "repository": "https://github.com/RLinf/RLinf",
+    "branch": "release/v0.2",
+    "commit": "46213e88caa910a4a52e68bde4fb96416c1efa55"
+  },
+  "comparison_sources": [
+    {
+      "repository": "https://github.com/RLinf/RLinf",
+      "branch": "main",
+      "commit": "230ea79b4b0e1c1cbe13a3079baa14b93b441dac"
+    },
+    {
+      "repository": "https://github.com/flashrt-project/FlashRT",
+      "branch": "main",
+      "commit": "f72192b263b267994edd7bbff0a8c62c6da98948"
+    },
+    {
+      "repository": "https://github.com/dexmal/realtime-vla-flash",
+      "branch": "main",
+      "commit": "da6ceccad603695a8a3d6fa14dd410c3aadb536f"
+    }
+  ],
+  "hardware_sources": [
+    {
+      "repository": "https://github.com/huggingface/lerobot",
+      "runtime_tag": "v0.4.4",
+      "runtime_commit": "8fff0fde7c79f23a93d845d1a50e985de01f8b8a",
+      "latest_review_commit": "bf31dd794ffb4f87380aba3912f64421e8352d3c",
+      "note": "v0.4.4 supports Python >=3.10; current main requires Python >=3.12"
+    },
+    {
+      "repository": "https://github.com/Dobot-Arm/TCP-IP-Python-V4",
+      "branch": "feature/v4-optimization",
+      "commit": "55ec1ec82201aaf2e6d54aa47b6272bbaa14c815"
+    },
+    {
+      "repository": "https://github.com/Dobot-Arm/DOBOT_6Axis_ROS2_V4",
+      "branch": "main",
+      "commit": "def21d05149576b9aed261f38e62ea236a5d8ec5"
+    },
+    {
+      "repository": "https://github.com/realsenseai/realsense-ros",
+      "branch": "ros2-master",
+      "commit": "60c850958d651130fc2cc3d10efb37ff5be93da5"
+    }
+  ],
+  "local_sources": [
+    {
+      "name": "RL_rlt_Last-R1.zip",
+      "sha256": "041e65bb38eddc755c6ba8f93425bdf824b3cd797c9b4ecc32e30113ad931956"
+    },
+    {
+      "name": "Codex task 019fe3f8-9cb9-7382-9c74-29392ba85a63",
+      "reviewed_turns": 95,
+      "reviewed_pages": 10,
+      "hashed_artifacts": 52,
+      "hash_mismatches": 0
+    },
+    {
+      "name": "RoboDojo V11 synchronized archive",
+      "sha256": "456a817b3a1355d72fcfc8f43856d61c0a1aed53338a3ac2b8810dc9b09b9b9f"
+    }
+  ]
+}

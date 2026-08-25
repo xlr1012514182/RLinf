@@ -1,0 +1,74 @@
+{
+  "residual_rl": {
+    "enabled": false,
+    "feature_dim": 2048,
+    "action_horizon": 50,
+    "action_dim": 6,
+    "actor_hidden_dim": 581,
+    "actor_bottleneck_dim": 512,
+    "target_actor_parameters": 1820000,
+    "parameter_tolerance": 10000,
+    "ppo_epochs": 1
+  },
+  "speculative": {"enabled": false},
+  "rtc": {
+    "enabled": false,
+    "execution_horizon": 8,
+    "queue_threshold": 2,
+    "overlap_horizon": 16,
+    "guidance_weight": 1.0,
+    "guidance_decay": 0.82
+  },
+  "robot": {
+    "backend": "ros2_joint",
+    "action_dim": 6,
+    "control_hz": 20.0,
+    "maximum_source_age_s": 1.0,
+    "maximum_generation_age_s": 0.75,
+    "maximum_observation_age_s": 0.5,
+    "maximum_state_camera_skew_ms": 75.0,
+    "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"],
+    "joint_lower": [-3.14, -3.14, -3.14, -3.14, -3.14, -3.14],
+    "joint_upper": [3.14, 3.14, 3.14, 3.14, 3.14, 3.14],
+    "max_step": [0.052, 0.052, 0.052, 0.052, 0.052, 0.052],
+    "dry_run": true,
+    "action_adapter": {
+      "implementation": "generic_affine_joint",
+      "action_mode": "absolute",
+      "coordinate_modes": [],
+      "policy_frame": "joint",
+      "policy_dim": 6,
+      "policy_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"],
+      "policy_units": ["radian", "radian", "radian", "radian", "radian", "radian"],
+      "policy_state_frame": "joint",
+      "policy_state_dim": 6,
+      "policy_state_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"],
+      "required_cameras": ["main"],
+      "robot_units": ["radian", "radian", "radian", "radian", "radian", "radian"],
+      "robot_from_policy": [0, 1, 2, 3, 4, 5],
+      "scale": [1, 1, 1, 1, 1, 1],
+      "offset": [0, 0, 0, 0, 0, 0],
+      "validated": false,
+      "calibration_id": "REPLACE_WITH_REVIEWED_NOVA5_ROS2_JOINT_CALIBRATION"
+    },
+    "options": {
+      "joint_state_topic": "/joint_states",
+      "command_topic": "/nova5_group_controller/joint_trajectory",
+      "service_backend": "dobot_v4",
+      "stop_service": "/dobot_bringup_ros2/srv/Stop",
+      "emergency_stop_service": "/dobot_bringup_ros2/srv/EmergencyStop",
+      "joint_units": ["radian", "radian", "radian", "radian", "radian", "radian"],
+      "limits_require_hardware_validation": true
+    }
+  },
+  "cameras": [
+    {
+      "name": "main",
+      "backend": "ros2_image",
+      "width": 640,
+      "height": 480,
+      "fps": 30,
+      "options": {"topic": "/camera/camera/color/image_raw"}
+    }
+  ]
+}

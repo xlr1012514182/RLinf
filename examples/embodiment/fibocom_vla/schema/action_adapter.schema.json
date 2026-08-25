@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rlinf.example/fibocom_vla/action_adapter.schema.json",
+  "title": "Fibocom policy-to-robot action adapter",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "implementation",
+    "action_mode",
+    "coordinate_modes",
+    "policy_frame",
+    "policy_dim",
+    "policy_names",
+    "policy_units",
+    "policy_state_frame",
+    "policy_state_dim",
+    "policy_state_names",
+    "required_cameras",
+    "robot_units",
+    "robot_from_policy",
+    "scale",
+    "offset",
+    "validated",
+    "calibration_id"
+  ],
+  "properties": {
+    "implementation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "action_mode": {
+      "enum": [
+        "absolute",
+        "delta_from_observation",
+        "integrated_delta",
+        "velocity"
+      ]
+    },
+    "coordinate_modes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "absolute",
+          "delta_from_observation",
+          "integrated_delta",
+          "velocity"
+        ]
+      }
+    },
+    "policy_frame": {
+      "enum": ["joint", "end_effector", "checkpoint_native"]
+    },
+    "policy_dim": {"type": "integer", "minimum": 1},
+    "policy_names": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "policy_units": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "policy_state_frame": {
+      "enum": ["joint", "end_effector", "checkpoint_native"]
+    },
+    "policy_state_dim": {"type": "integer", "minimum": 1},
+    "policy_state_names": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "required_cameras": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "robot_units": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "robot_from_policy": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 0},
+      "uniqueItems": true
+    },
+    "scale": {
+      "type": "array",
+      "items": {"type": "number"}
+    },
+    "offset": {
+      "type": "array",
+      "items": {"type": "number"}
+    },
+    "validated": {"type": "boolean"},
+    "calibration_id": {"type": "string"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"validated": {"const": true}},
+        "required": ["validated"]
+      },
+      "then": {
+        "properties": {
+          "policy_names": {"minItems": 1},
+          "policy_units": {"minItems": 1},
+          "policy_state_names": {"minItems": 1},
+          "robot_units": {"minItems": 1},
+          "calibration_id": {"minLength": 1}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "implementation": {"const": "generic_affine_joint"},
+          "validated": {"const": true}
+        },
+        "required": ["implementation", "validated"]
+      },
+      "then": {
+        "properties": {
+          "robot_from_policy": {"minItems": 1},
+          "scale": {"minItems": 1},
+          "offset": {"minItems": 1}
+        }
+      }
+    }
+  ]
+}

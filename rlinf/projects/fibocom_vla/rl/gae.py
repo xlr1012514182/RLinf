@@ -50,7 +50,10 @@ def compute_gae(
         mask_array = mask_array[None, :]
     if rewards_array.ndim != 2:
         raise ShapeMismatchError("rewards must have shape [T] or [B, T]")
-    if terminals_array.shape != rewards_array.shape or mask_array.shape != rewards_array.shape:
+    if (
+        terminals_array.shape != rewards_array.shape
+        or mask_array.shape != rewards_array.shape
+    ):
         raise ShapeMismatchError("terminals and valid_mask must match rewards")
     if values_array.shape != (rewards_array.shape[0], rewards_array.shape[1] + 1):
         raise ShapeMismatchError("values must have shape [B, T + 1]")

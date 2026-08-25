@@ -44,7 +44,9 @@ class OpenCVCamera:
         try:
             import cv2
         except ImportError as error:
-            raise OptionalDependencyError("OpenCV camera requires opencv-python") from error
+            raise OptionalDependencyError(
+                "OpenCV camera requires opencv-python"
+            ) from error
         source = self.config.options.get("source", 0)
         backend = self.config.options.get("api_preference")
         self._capture = (
@@ -73,7 +75,14 @@ class OpenCVCamera:
             timestamp_ns = time.monotonic_ns()
             if success:
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                return rgb, timestamp_ns, {"backend": "opencv", "source": str(self.config.options.get("source", 0))}
+                return (
+                    rgb,
+                    timestamp_ns,
+                    {
+                        "backend": "opencv",
+                        "source": str(self.config.options.get("source", 0)),
+                    },
+                )
             time.sleep(0.005)
         raise HardwareNotReadyError("timed out reading OpenCV frame")
 
@@ -116,7 +125,8 @@ class RealSenseCamera:
             rs.format.rgb8,
             self.config.fps,
         )
-        if bool(self.config.options.get("enable_depth", False)):
+        enable_depth = bool(self.config.options.get("enable_depth", False))
+        if enable_depth:
             configuration.enable_stream(
                 rs.stream.depth,
                 self.config.width,
@@ -127,16 +137,20 @@ class RealSenseCamera:
         pipeline.start(configuration)
         self._rs = rs
         self._pipeline = pipeline
-        self._align = rs.align(rs.stream.color)
+        # librealsense align requires a depth frame. RGB-only streams must
+        # bypass it and consume the frameset's color frame directly.
+        self._align = rs.align(rs.stream.color) if enable_depth else None
 
     def read(
         self, timeout_s: float = 1.0
     ) -> tuple[NDArray[Any], int, Mapping[str, Any]]:
         if self._pipeline is None or self._rs is None:
             raise HardwareNotReadyError("RealSense camera is not connected")
-        frames = self._pipeline.wait_for_frames(timeout_ms=max(1, int(timeout_s * 1_000)))
+        frames = self._pipeline.wait_for_frames(
+            timeout_ms=max(1, int(timeout_s * 1_000))
+        )
         timestamp_ns = time.monotonic_ns()
-        aligned = self._align.process(frames)
+        aligned = self._align.process(frames) if self._align is not None else frames
         color_frame = aligned.get_color_frame()
         if not color_frame:
             raise HardwareNotReadyError("RealSense frame set contains no color frame")
@@ -149,10 +163,15 @@ class RealSenseCamera:
         if bool(self.config.options.get("enable_depth", False)):
             depth_frame = aligned.get_depth_frame()
             if not depth_frame:
-                raise HardwareNotReadyError("RealSense frame set contains no depth frame")
+                raise HardwareNotReadyError(
+                    "RealSense frame set contains no depth frame"
+                )
             metadata["depth"] = np.asanyarray(depth_frame.get_data()).copy()
             metadata["depth_scale_m"] = float(
-                aligned.get_profile().get_device().first_depth_sensor().get_depth_scale()
+                aligned.get_profile()
+                .get_device()
+                .first_depth_sensor()
+                .get_depth_scale()
             )
         return color, timestamp_ns, metadata
 
@@ -175,7 +194,9 @@ def _ros_image_to_numpy(message) -> NDArray[Any]:
     elif encoding == "32fc1":
         dtype, channels = np.float32, 1
     else:
-        raise HardwareNotReadyError(f"unsupported ROS image encoding: {message.encoding}")
+        raise HardwareNotReadyError(
+            f"unsupported ROS image encoding: {message.encoding}"
+        )
     item_size = np.dtype(dtype).itemsize
     row_values = message.step // item_size
     array = np.frombuffer(message.data, dtype=dtype).reshape(message.height, row_values)
@@ -201,6 +222,7 @@ class ROS2ImageCamera:
         self._spin_thread: threading.Thread | None = None
         self._condition = threading.Condition()
         self._latest = None
+        self._last_returned_ns = 0
 
     @property
     def is_connected(self) -> bool:
@@ -216,6 +238,8 @@ class ROS2ImageCamera:
                 "ROS2 image camera requires rclpy and sensor_msgs"
             ) from error
         self._rclpy = rclpy
+        self._latest = None
+        self._last_returned_ns = 0
         if not rclpy.ok():
             rclpy.init(args=None)
         self._node = rclpy.create_node(f"fibocom_camera_{self.config.name}")
@@ -251,15 +275,26 @@ class ROS2ImageCamera:
     ) -> tuple[NDArray[Any], int, Mapping[str, Any]]:
         if not self.is_connected:
             raise HardwareNotReadyError("ROS2 image camera is not connected")
+        maximum_age_s = float(self.config.options.get("max_frame_age_s", 0.25))
+        if maximum_age_s <= 0:
+            raise ValueError("max_frame_age_s must be positive")
         deadline = time.monotonic() + timeout_s
         with self._condition:
-            while self._latest is None:
+            while True:
+                if self._latest is not None:
+                    image, timestamp_ns, metadata = self._latest
+                    age_s = (time.monotonic_ns() - timestamp_ns) / 1_000_000_000
+                    if timestamp_ns > self._last_returned_ns and age_s <= maximum_age_s:
+                        self._last_returned_ns = timestamp_ns
+                        output_metadata = dict(metadata)
+                        output_metadata["host_frame_age_ms"] = age_s * 1_000.0
+                        return image.copy(), timestamp_ns, output_metadata
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise HardwareNotReadyError("timed out waiting for ROS image")
+                    raise HardwareNotReadyError(
+                        "timed out waiting for a fresh, previously unseen ROS image"
+                    )
                 self._condition.wait(remaining)
-            image, timestamp_ns, metadata = self._latest
-            return image.copy(), timestamp_ns, dict(metadata)
 
     def disconnect(self) -> None:
         if self._executor is not None:
@@ -275,6 +310,8 @@ class ROS2ImageCamera:
         self._node = None
         self._executor = None
         self._spin_thread = None
+        self._latest = None
+        self._last_returned_ns = 0
 
 
 class SynchronizedCameraRig:
@@ -289,7 +326,13 @@ class SynchronizedCameraRig:
     ) -> None:
         if not cameras:
             raise ValueError("at least one camera is required")
-        if maximum_skew_ms < 0 or maximum_attempts < 1:
+        if (
+            not np.isfinite(maximum_skew_ms)
+            or maximum_skew_ms < 0
+            or isinstance(maximum_attempts, bool)
+            or not isinstance(maximum_attempts, int)
+            or maximum_attempts < 1
+        ):
             raise ValueError("invalid synchronization gate")
         self.cameras = dict(cameras)
         self.maximum_skew_ns = int(maximum_skew_ms * 1_000_000)
@@ -301,38 +344,53 @@ class SynchronizedCameraRig:
         connected: list[CameraBackend] = []
         try:
             for camera in self.cameras.values():
-                camera.connect()
                 connected.append(camera)
+                camera.connect()
         except Exception:
             for camera in reversed(connected):
-                camera.disconnect()
+                try:
+                    camera.disconnect()
+                except Exception:
+                    pass
             raise
 
     def read(
         self, timeout_s: float = 1.0
     ) -> tuple[dict[str, NDArray[Any]], int, dict[str, Any]]:
-        """Return a bundle whose host receive times satisfy the skew gate."""
+        """Return a synchronized bundle within one global timeout budget."""
 
+        if not np.isfinite(timeout_s) or timeout_s <= 0:
+            raise ValueError("camera-rig timeout_s must be finite and positive")
+        deadline = time.monotonic() + timeout_s
         last_skew_ns = 0
         for _ in range(self.maximum_attempts):
-            frames = {
-                name: camera.read(timeout_s)
-                for name, camera in self.cameras.items()
-            }
+            frames = {}
+            for name, camera in self.cameras.items():
+                remaining_s = deadline - time.monotonic()
+                if remaining_s <= 0:
+                    raise HardwareNotReadyError(
+                        "camera rig exceeded its global read timeout"
+                    )
+                frames[name] = camera.read(remaining_s)
             timestamps = [value[1] for value in frames.values()]
             last_skew_ns = max(timestamps) - min(timestamps)
             if last_skew_ns <= self.maximum_skew_ns:
                 images = {name: value[0] for name, value in frames.items()}
                 metadata = {
-                    "camera_metadata": {name: value[2] for name, value in frames.items()},
+                    "camera_metadata": {
+                        name: value[2] for name, value in frames.items()
+                    },
                     "camera_timestamps_ns": {
                         name: value[1] for name, value in frames.items()
                     },
                     "skew_ms": last_skew_ns / 1_000_000.0,
                 }
                 return images, max(timestamps), metadata
+            if time.monotonic() >= deadline:
+                break
         raise HardwareNotReadyError(
-            f"camera skew {last_skew_ns / 1_000_000.0:.2f}ms exceeds gate"
+            f"camera skew {last_skew_ns / 1_000_000.0:.2f}ms exceeds gate "
+            "within the global timeout"
         )
 
     def disconnect(self) -> None:

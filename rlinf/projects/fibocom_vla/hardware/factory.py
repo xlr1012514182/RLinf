@@ -44,9 +44,7 @@ def create_robot(config: RobotConfig) -> RobotBackend:
     raise ConfigurationError(f"unsupported robot backend: {config.backend}")
 
 
-def create_cameras(
-    configs: tuple[CameraConfig, ...]
-) -> dict[str, CameraBackend]:
+def create_cameras(configs: tuple[CameraConfig, ...]) -> dict[str, CameraBackend]:
     """Create a name-keyed camera map."""
 
     cameras: dict[str, CameraBackend] = {}

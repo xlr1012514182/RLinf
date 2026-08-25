@@ -45,8 +45,43 @@ class SO101Robot(JointRobotBase):
             raise ConfigurationError(
                 "SO101 requires six joints ordered as " + ", ".join(SO101_MOTORS)
             )
+        use_degrees = bool(config.options.get("use_degrees", True))
+        body_unit = "degree" if use_degrees else "normalized_-100_100"
+        expected_units = (body_unit,) * 5 + ("percent",)
+        declared_units = tuple(config.action_adapter.robot_units)
+        if declared_units and declared_units != expected_units:
+            raise ConfigurationError(
+                "SO101 action_adapter.robot_units must match LeRobot's "
+                f"use_degrees={use_degrees}: {expected_units}"
+            )
+        if not config.dry_run and declared_units != expected_units:
+            raise ConfigurationError(
+                "real SO101 control requires explicit LeRobot robot_units: "
+                f"{expected_units}"
+            )
         super().__init__(config)
         self._robot = None
+        self._read_only_connection = False
+
+    @staticmethod
+    def _validate_calibration(calibration) -> None:
+        if set(calibration) != set(SO101_MOTORS):
+            raise ConfigurationError(
+                "SO101 needs an existing six-motor LeRobot calibration; "
+                "set robot.options.calibration_dir/id or run an explicitly "
+                "authorized non-dry calibration first"
+            )
+        for expected_id, name in enumerate(SO101_MOTORS, start=1):
+            value = calibration[name]
+            if int(value.id) != expected_id:
+                raise ConfigurationError(
+                    f"SO101 calibration id for {name} is {value.id}, "
+                    f"expected {expected_id}"
+                )
+            if int(value.range_min) >= int(value.range_max):
+                raise ConfigurationError(
+                    f"SO101 calibration range for {name} is invalid"
+                )
 
     def _connect_impl(self) -> None:
         try:
@@ -62,11 +97,17 @@ class SO101Robot(JointRobotBase):
         port = options.get("port")
         if not port:
             raise ConfigurationError("robot.options.port is required for SO101")
+        if self.config.dry_run and bool(options.get("calibrate", False)):
+            raise ConfigurationError(
+                "SO101 calibration writes motor registers and is forbidden in dry-run"
+            )
         kwargs = {
             "port": str(port),
             "id": str(options.get("id", "fibocom-so101")),
-            "disable_torque_on_disconnect": bool(
-                options.get("disable_torque_on_disconnect", True)
+            "disable_torque_on_disconnect": (
+                False
+                if self.config.dry_run
+                else bool(options.get("disable_torque_on_disconnect", True))
             ),
             "max_relative_target": options.get(
                 "max_relative_target", max(self.config.max_step)
@@ -77,14 +118,33 @@ class SO101Robot(JointRobotBase):
             kwargs["calibration_dir"] = Path(options["calibration_dir"])
         follower_config = SO101FollowerConfig(**kwargs)
         self._robot = SO101Follower(follower_config)
-        self._robot.connect(calibrate=bool(options.get("calibrate", False)))
+        calibrate = bool(options.get("calibrate", False))
+        if not calibrate:
+            self._validate_calibration(self._robot.calibration)
+        if self.config.dry_run:
+            # SOFollower.connect() always calls configure(), which disables
+            # torque and writes operating/PID registers. A dry-run therefore
+            # opens only the read bus and deliberately skips that high-level
+            # lifecycle method.
+            self._robot.bus.connect()
+            self._read_only_connection = True
+        else:
+            self._robot.connect(calibrate=calibrate)
+            self._validate_calibration(self._robot.calibration)
+            self._read_only_connection = False
 
     def _read_state_impl(self) -> RobotState:
         if self._robot is None:
             raise HardwareNotReadyError("SO101 SDK object is unavailable")
-        observation = self._robot.get_observation()
+        read_retries = int(self.config.options.get("read_retries", 3))
+        if read_retries < 0:
+            raise ConfigurationError("SO101 read_retries must be non-negative")
+        raw_positions = self._robot.bus.sync_read(
+            "Present_Position",
+            num_retry=read_retries,
+        )
         positions = np.asarray(
-            [observation[f"{name}.pos"] for name in SO101_MOTORS],
+            [raw_positions[name] for name in SO101_MOTORS],
             dtype=np.float32,
         )
         return RobotState(
@@ -112,8 +172,7 @@ class SO101Robot(JointRobotBase):
             return
         observation = self._robot.get_observation()
         hold = {
-            f"{name}.pos": float(observation[f"{name}.pos"])
-            for name in SO101_MOTORS
+            f"{name}.pos": float(observation[f"{name}.pos"]) for name in SO101_MOTORS
         }
         self._robot.send_action(hold)
         if bool(self.config.options.get("stop_disables_torque", False)):
@@ -121,5 +180,12 @@ class SO101Robot(JointRobotBase):
 
     def _disconnect_impl(self) -> None:
         if self._robot is not None:
-            self._robot.disconnect()
-            self._robot = None
+            try:
+                if self._read_only_connection:
+                    if self._robot.bus.is_connected:
+                        self._robot.bus.disconnect(disable_torque=False)
+                else:
+                    self._robot.disconnect()
+            finally:
+                self._robot = None
+                self._read_only_connection = False

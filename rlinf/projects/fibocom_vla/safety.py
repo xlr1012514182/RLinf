@@ -37,10 +37,14 @@ class JointSafetyEnvelope:
         lower = np.asarray(self.lower, dtype=np.float32)
         upper = np.asarray(self.upper, dtype=np.float32)
         max_step = np.asarray(self.max_step, dtype=np.float32)
-        if lower.ndim != 1 or upper.shape != lower.shape or max_step.shape != lower.shape:
+        if (
+            lower.ndim != 1
+            or upper.shape != lower.shape
+            or max_step.shape != lower.shape
+        ):
             raise ShapeMismatchError("safety vectors must be equal rank-1 arrays")
-        if not np.all(np.isfinite(lower)) or not np.all(np.isfinite(upper)):
-            raise ShapeMismatchError("joint limits must be finite")
+        if not all(np.all(np.isfinite(value)) for value in (lower, upper, max_step)):
+            raise ShapeMismatchError("joint limits and max_step must be finite")
         if np.any(lower >= upper) or np.any(max_step <= 0):
             raise ShapeMismatchError("invalid joint range or max_step")
         object.__setattr__(self, "lower", lower)
@@ -111,9 +115,18 @@ class ActionSafetyGate:
             )
         if current_array.shape != target_array.shape:
             raise ShapeMismatchError("current and target shapes differ")
-        if not np.all(np.isfinite(target_array)) or not np.all(np.isfinite(current_array)):
+        if not np.all(np.isfinite(target_array)) or not np.all(
+            np.isfinite(current_array)
+        ):
             self.engage_estop("non-finite action or state")
             raise SafetyViolationError("non-finite action or state")
+        if np.any(current_array < self.envelope.lower) or np.any(
+            current_array > self.envelope.upper
+        ):
+            self.engage_estop("current joint state is outside the safety envelope")
+            raise SafetyViolationError(
+                "current joint state is outside the safety envelope"
+            )
         bounded = np.clip(target_array, self.envelope.lower, self.envelope.upper)
         delta = np.clip(
             bounded - current_array,

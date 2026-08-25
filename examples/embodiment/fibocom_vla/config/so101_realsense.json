@@ -1,0 +1,81 @@
+{
+  "residual_rl": {
+    "enabled": true,
+    "feature_dim": 2048,
+    "action_horizon": 50,
+    "action_dim": 7,
+    "actor_hidden_dim": 562,
+    "actor_bottleneck_dim": 512,
+    "target_actor_parameters": 1820000,
+    "parameter_tolerance": 10000,
+    "ppo_epochs": 1
+  },
+  "rtc": {
+    "enabled": true,
+    "execution_horizon": 8,
+    "queue_threshold": 2,
+    "overlap_horizon": 16,
+    "guidance_weight": 1.0,
+    "guidance_decay": 0.82
+  },
+  "robot": {
+    "backend": "so101",
+    "action_dim": 6,
+    "control_hz": 20.0,
+    "maximum_source_age_s": 1.0,
+    "maximum_generation_age_s": 0.75,
+    "maximum_observation_age_s": 0.5,
+    "maximum_state_camera_skew_ms": 75.0,
+    "joint_names": ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"],
+    "joint_lower": [-110, -100, -100, -100, -180, 0],
+    "joint_upper": [110, 100, 100, 100, 180, 100],
+    "max_step": [5, 5, 5, 5, 10, 10],
+    "dry_run": true,
+    "action_adapter": {
+      "implementation": "rlinf.projects.fibocom_vla.hardware.kinematics:create_libero_cartesian_adapter",
+      "action_mode": "delta_from_observation",
+      "coordinate_modes": ["delta_from_observation", "delta_from_observation", "delta_from_observation", "delta_from_observation", "delta_from_observation", "delta_from_observation", "absolute"],
+      "policy_frame": "end_effector",
+      "policy_dim": 7,
+      "policy_names": ["delta_x", "delta_y", "delta_z", "delta_roll", "delta_pitch", "delta_yaw", "gripper"],
+      "policy_units": ["meter", "meter", "meter", "radian", "radian", "radian", "normalized"],
+      "policy_state_frame": "checkpoint_native",
+      "policy_state_dim": 8,
+      "policy_state_names": ["state_0", "state_1", "state_2", "state_3", "state_4", "state_5", "state_6", "state_7"],
+      "required_cameras": ["main", "wrist"],
+      "robot_units": ["degree", "degree", "degree", "degree", "degree", "percent"],
+      "robot_from_policy": [],
+      "scale": [],
+      "offset": [],
+      "validated": false,
+      "calibration_id": "REPLACE_WITH_REVIEWED_PI05_TO_SO101_CALIBRATION"
+    },
+    "options": {
+      "port": "/dev/ttyACM0",
+      "id": "fibocom-so101",
+      "calibrate": false,
+      "use_degrees": true,
+      "disable_torque_on_disconnect": true,
+      "limits_require_hardware_validation": true,
+      "kinematics_factory": "REPLACE_WITH_REVIEWED_SO101_IK_MODULE:create_engine"
+    }
+  },
+  "cameras": [
+    {
+      "name": "main",
+      "backend": "realsense",
+      "width": 640,
+      "height": 480,
+      "fps": 30,
+      "options": {"serial_number": "REPLACE_ME", "enable_depth": false}
+    },
+    {
+      "name": "wrist",
+      "backend": "realsense",
+      "width": 640,
+      "height": 480,
+      "fps": 30,
+      "options": {"serial_number": "REPLACE_WRIST_CAMERA", "enable_depth": false}
+    }
+  ]
+}

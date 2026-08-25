@@ -39,6 +39,7 @@ class MockJointRobot(JointRobotBase):
         ) * 0.5
         self._velocity = np.zeros(config.action_dim, dtype=np.float32)
         self.command_count = 0
+        self.command_history: list[NDArray[np.float32]] = []
 
     def _connect_impl(self) -> None:
         return None
@@ -57,6 +58,7 @@ class MockJointRobot(JointRobotBase):
         self._position = target.copy()
         self._velocity = (self._position - previous) / period_s
         self.command_count += 1
+        self.command_history.append(self._position.copy())
         return self._position.copy()
 
     def send_joint_target(
@@ -98,9 +100,7 @@ class MockCamera:
     ) -> tuple[NDArray[np.uint8], int, Mapping[str, Any]]:
         if not self._connected:
             raise HardwareNotReadyError("mock camera is not connected")
-        image = np.zeros(
-            (self.config.height, self.config.width, 3), dtype=np.uint8
-        )
+        image = np.zeros((self.config.height, self.config.width, 3), dtype=np.uint8)
         image[0, 0] = self._frame_id % 256
         timestamp_ns = time.monotonic_ns()
         metadata = {"frame_id": self._frame_id, "backend": "mock"}
