@@ -1,190 +1,281 @@
-# Fibocom π0.5 post-training and real-time inference stack
+# Fibocom π0.5 VLA Stack
 
-This project extends RLinf `release/v0.2` with a bounded implementation of the
-Fibocom internship work: a frozen π0.5 residual post-training path, CUDA Graph
-runtime capture, continuous-action speculative inference, asynchronous RTC,
-and pluggable SO101/Dobot Nova/ROS2/camera backends.
+[English](README.md) | [简体中文](README_ZH.md)
 
-The implementation and the benchmark evidence are intentionally separate.
-Numbers in a résumé, paper, upstream README, or historical StarVLA experiment
-are never emitted as results of a new run. A benchmark becomes a local result
-only after its JSON/CSV artifact records the commit, config, device, warm-up,
-sample count, metric definition, and quality gate.
+**Frozen-base residual RL post-training · auditable VLA inference acceleration · fail-closed robot-integration runtime**
 
-## Source alignment
+This project extends [RLinf `release/v0.2`](https://github.com/RLinf/RLinf/tree/release/v0.2)
+to study two practical bottlenecks in embodied foundation models:
 
-| Source | Audited revision | What is reused |
+1. how to improve a pretrained **π0.5** policy with a small amount of
+   self-collected experience while leaving its base weights frozen; and
+2. how to turn continuous-action VLA inference into a measurable, asynchronous,
+   hardware-integration runtime with explicit safety gates.
+
+> **Validation status: `component-verified` (2026-08-25).** The repository has
+> passed 131 focused unit tests, a 16-step Mock control loop, and bounded
+> synthetic CUDA Graph/RTC GPU smokes. It has **not** yet reproduced the reported
+> success rates or end-to-end π0.5 latency on a simulator or physical robot.
+> Every reported, upstream, historical, and newly measured number is labelled
+> separately below.
+
+## At a glance
+
+| Workstream | What this branch provides | Current gate |
 |---|---|---|
-| RLinf | `release/v0.2` / `46213e88` | OpenPI π0.5 loading, transforms, PPO/GAE conventions, real-world abstractions |
-| RLinf latest | `230ea79b` | compatibility review only; changes are not silently backported |
-| FlashRT | `f72192b2` | CUDA Graph/exactness and acceleration-path design evidence |
-| realtime-vla-flash | `da6cecca` | continuous draft, batched verification, prefix acceptance, RTC comparison |
-| Last-R1 local archive | SHA-256 recorded under `docs/fibocom_vla_evidence/` | residual RL lineage and conflict audit |
-| historical Codex task `019fe3f8-…` | all 95 turns plus 52 hashed artifacts audited | StarVLA profiling/bit-exact lessons, not π0.5 results |
+| **Residual RL post-training** | frozen π0.5 boundary, 1.82M-class bounded residual actor, independent value head, twin-Q auxiliary critic, trajectory GAE, single-epoch PPO, rollout lineage | implemented + unit-tested |
+| **CUDA Graph / TensorRT diagnostics** | shape-stable graph capture with eager fallback and strict exactness; TensorRT paired timing, parity, layer-diff and BF16/ULP diagnostics | CUDA Graph synthetic GPU component-verified; TensorRT audit contracts unit-tested with CPU fakes |
+| **Continuous speculative inference** | chunk draft, batched interpolation-path verification, contiguous-prefix acceptance, explicit low-acceptance takeover | implemented + unit-tested; checkpoint-specific draft/verifier pending |
+| **RTC asynchronous inference** | execution/compute overlap, hard prefix, overlap VJP guidance, exponentially decayed weights, separated timing clocks | synthetic CUDA component verified; OpenPI/robot validation pending |
+| **Robot integration** | SO101, Dobot Nova TCP, generic ROS2 joint control, OpenCV/RealSense/ROS2 cameras, semantic adapters and fail-closed safety gates | Mock verified; real hardware placeholders remain locked |
 
-## What the code implements
+## Architecture
 
-### Frozen-base residual post-training
+```mermaid
+flowchart LR
+    O["Multi-camera frames<br/>robot state + instruction"] --> G["Sync, freshness<br/>and provenance gates"]
+    G --> S["Robot → checkpoint<br/>semantic adapter"]
+    S --> P["Frozen π0.5<br/>reference chunk + same-forward feature"]
+    P --> W["Explicit policy assembly<br/>optional residual → optional speculative"]
+    W --> Q["RTC planner<br/>async queue + timing"]
+    Q --> A["Checkpoint → absolute joints<br/>IK/FK or affine adapter"]
+    A --> C["Safety controller<br/>limits + age + send/stop failure gates"]
+    C --> H["SO101 / Dobot Nova / ROS2"]
 
-- The base π0.5 module is forced to `eval()`, every base parameter has
-  `requires_grad=False`, and a pre-update assertion rejects accidental unfreeze.
-- The trainable actor receives a 2048-D frozen-prefix feature and the full reference
-  action chunk. Its adjusted action is `a_ref + bounded_delta`; feasible
-  asymmetric residual bounds keep the final action inside the configured action
-  range even when the reference lies near a boundary.
-- The 50×7 actor with hidden width 562 has exactly **1,818,542** trainable
-  scalars. The 50×6 actor with hidden width 581 has exactly **1,819,139**.
-  Both are the audited 1.82M-class geometries; construction fails if the actual
-  count falls outside the configured tolerance.
-- The actor update is explicitly named `HybridResidualPPOTrainer`: clipped PPO
-  with trajectory-level GAE plus a separately weighted twin-Q auxiliary term.
-  The code does not pretend that PPO and off-policy double-Q are identical.
-- GAE uses an independent state-value head conditioned on frozen-base features
-  and the reference chunk; it never substitutes `min Q(s, mode(policy))` for
-  `V(s)`. Twin-Q remains an explicitly auxiliary TD critic.
-- Every rollout chunk records `action_source` and `policy_mask`. Only residuals
-  actually sampled from the bounded behavior distribution carry finite stored
-  log-probabilities and enter PPO. Reference, guard, clamp, rescue,
-  deterministic, and padding actions are excluded by contract, while valid
-  intervention actions may still train the critics.
-- Task rewards enter as chunk-level `{0,1}` outcomes. At the second discrete
-  failure, that transition becomes terminal with a fixed failure outcome; later
-  tail entries are zeroed and masked. The negative GAE propagation is tested.
-- `ppo_epochs` is fixed to one for the declared single-round update.
+    P -. "shape-stable integration hook" .-> CG["CUDA Graph"]
+    P -. "external engine" .-> TR["TensorRT audit path"]
+    EXT["External draft + verifier"] -. "required when speculative is enabled" .-> W
+    P -. "lineage-capable path" .-> NR["Native RTC VJP"]
+    NR -.-> Q
+```
 
-### Runtime acceleration
+Solid edges describe the intended logical interfaces; only the Mock path has
+been executed. Real π0.5 and robot endpoints remain blocked on the H=50 model,
+kinematics, calibration, and SDK values. Dashed edges are optional acceleration
+paths with explicit capability gates. In particular, the current residual
+wrapper, speculative wrapper, and custom nonlinear IK/FK boundary do not
+preserve a provably native RTC lineage end to end; they therefore select a
+labelled host output-space fallback instead of claiming denoising-time VJP.
 
-- `ShapeStableCUDAGraph` captures only a declared stable tensor tree. Shape,
-  stride, dtype, device, structure, or non-tensor changes select eager fallback.
-  `verify_exactness` requires `torch.equal` and also reports absolute/relative
-  errors.
-- The continuous speculative path performs draft chunk generation, batched
-  main-model verification along an interpolation path, contiguous prefix
-  acceptance, and suffix completion. Low acceptance can use the résumé-specific
-  same-round full-main takeover; diagnostics label this as an override because
-  the audited upstream repository schedules full inference on the next round.
-- RTC records model compute, planner queue wait, robot blocking wait, and control
-  loop time under different metric names. Hiding compute behind execution does
-  not rewrite model latency.
-- Native OpenPI RTC keeps the normalized action from the same forward in
-  `ActionChunk.model_values`. The next request derives its model-space hard
-  prefix and overlap target from that exact lineage, freezes the prefix during
-  every denoising step, and applies a differentiable/VJP overlap objective with
-  exponentially decayed position weights. Missing or inconsistent model-space
-  lineage fails closed.
-- Native RTC is capability-gated end to end. The current residual wrapper,
-  speculative wrapper, and custom nonlinear LIBERO IK/FK adapter do not expose
-  a lineage-safe native RTC path, so the planner uses an explicitly labelled
-  host output-space fallback (`rtc_postprocess_fallback=true`,
-  `rtc_guidance_mode=host_output_postprocess`). That fallback is plumbing, not
-  denoising-time VJP guidance.
-- Python cannot safely cancel an in-flight model/GPU forward. If the planner
-  worker is still alive after `planner_shutdown_timeout_s`, teardown raises;
-  restart the owning process before reusing its model or accelerator context.
+## 1. Frozen π0.5 + residual RL post-training
 
-### Hardware and sensor backends
+The base policy supplies a reference action chunk and a 2048-D feature from the
+same frozen forward pass. A lightweight actor learns only a feasible local
+correction:
 
-- SO101 uses the official LeRobot `SO101Follower` API and its `*.pos` contract.
-  It is a five-DOF arm plus gripper (six commanded motors), not a six-DOF arm.
-  Consequently, a six-coordinate Cartesian pose delta cannot be relabelled as
-  six SO101 joints; the LIBERO example requires a reviewed, task-specific
-  kinematics engine that rejects infeasible or ambiguous targets.
-- Dobot Nova/NovaLite uses the official TCP/IP V4 SDK, 30004 feedback, and
-  six arm targets in degrees through `ServoJ`. The optional seventh coordinate
-  is a binary gripper command sent through DO; real seven-dimensional control
-  requires independent DI feedback rather than commanded-state echo. Before
-  every command, controller errors/collision, the documented active-low
-  `SafetyState` interlocks, and all four safety-skin approach fields are checked.
-- A generic ROS2 backend uses standard `sensor_msgs/JointState` and
-  `trajectory_msgs/JointTrajectory`. Its acknowledged stop path supports either
-  `std_srvs/srv/Trigger` (`service_backend=trigger`) or Dobot
-  `dobot_msgs_v4/srv/{Stop,EmergencyStop}`
-  (`service_backend=dobot_v4`). Real mode preflights the command subscriber and
-  both services; it never synthesizes a hold from a possibly stale joint state.
-  A six-axis Nova5 arm template is provided at
-  `config/ros2_nova5_arm.json`.
-- Cameras include OpenCV, RealSense SDK, ROS2 `sensor_msgs/Image`, and Mock.
-  Every multi-camera read shares one global timeout budget and must satisfy the
-  camera-to-camera skew gate. The joined observation then passes monotonic-time,
-  maximum-age, and robot-state/camera-skew gates.
-- Every real backend starts in `dry_run`. Before every send, the controller
-  checks both source-observation age and action-generation age. Joint
-  range/delta checks, non-finite latching, backend feedback freshness, bounded
-  episodes, connect rollback, stop/emergency-stop selection, reverse-order
-  camera/robot cleanup, and an explicit second CLI motion switch are included.
-  Dry-run is read-only: target, stop, and emergency writes are suppressed;
-  SO101 skips the high-level configure/calibrate lifecycle, and Dobot rejects
-  connection-time request-control, clear-error, or enable writes.
+```text
+a_exec[t] = a_ref[t] + δθ(frozen_feature, a_ref)[t]
+```
 
-### Policy/robot semantic adapter and calibration gate
+- **Base-weight immutability:** π0.5 is forced to `eval()`, all base parameters
+  have `requires_grad=False`, and training rejects accidental unfreezing. This
+  protects the weights, but cross-task base-capability retention has not yet
+  been evaluated.
+- **RL Token-style mapping:** the motivating idea is realized here as
+  frozen-prefix, reference-anchored residual post-training; this branch does not
+  claim integration of a separate upstream `RLTTokenTransformer` checkpoint.
+- **1.82M-class actor:** the 50×7, hidden-562 configuration has exactly
+  **1,818,542 trainable actor parameters**. The 50×6, hidden-581 configuration
+  has 1,819,139. Twin-Q and the independent state-value head are separate and
+  are not hidden inside this count.
+- **Reference-anchored action:** asymmetric residual bounds account for both
+  `max_residual` and the final action domain, preventing silent post-hoc clipping
+  from changing the behavior-policy likelihood.
+- **Clean PPO provenance:** every action carries `action_source` and
+  `policy_mask`. Reference, guard, clamp, rescue, deterministic, and padding
+  actions can train critics where valid but never contaminate PPO log-probability
+  ratios.
+- **Binary task outcomes + terminal-failure transform:** task inputs are
+  chunk-level `{0,1}`. The second discrete failure is rewritten to a configurable
+  terminal penalty (default `-1`), then the later tail is zeroed/masked so GAE
+  receives a negative terminal outcome. A zero-value-baseline unit test verifies
+  backward-negative propagation; with a learned `V(s)`, the implementation does
+  not hard-force the advantage sign. The transformed training reward is not
+  purely binary, and this code does not prove the reward semantics of the
+  historical 112-episode artifacts.
+- **Hybrid objective with honest semantics:** an independent `V(s)` supplies
+  GAE; twin-Q is an explicitly weighted auxiliary TD/actor objective. The code
+  does not substitute `min Q(s,a)` for a state value. `ppo_epochs` is fixed to
+  one for the declared single-round update.
+- **Auditable residual lineage:** checkpoints record the config hash, residual
+  checkpoint SHA-256, and an operator-supplied immutable base-model identity.
+  Rollout archives must match the exact residual behavior-checkpoint hash before
+  an update can run. The CLI does not independently load or hash π0.5 bytes.
 
-`PolicyRobotAdapterPolicy` is installed by both CLI execution paths. It adapts
-the robot observation into checkpoint state space before calling the inner
-policy, then adapts the returned policy chunk into absolute robot-joint targets
-before the controller sees it. The built-in `PolicyRobotActionAdapter` supplies
-the reversible affine joint implementation and supports four declared modes;
-the JSON shape is documented in `schema/action_adapter.schema.json`:
+## 2. Inference runtime: profiling, CUDA Graph, and TensorRT
 
-| `action_mode` | policy-space absolute target at step `t` |
+### Shape-stable CUDA Graph
+
+`ShapeStableCUDAGraph` captures only a declared tensor-tree signature. Any
+change in structure, shape, stride, dtype, device, or non-tensor input uses the
+eager path. Exactness is checked with `torch.equal`, alongside absolute and
+relative error diagnostics. This expresses the intended split between a stable
+captured subgraph and dynamic eager branches without pretending that the whole
+VLA is static.
+
+The included benchmark is deliberately a **synthetic MLP component smoke**.
+The production OpenPI visual/language subgraph has not yet been wired to this
+capture utility.
+
+### TensorRT evidence path
+
+The TensorRT module supplies a dependency-lazy engine runner, paired timing,
+PyTorch-versus-engine structural/numerical parity, per-layer comparison and
+first-divergence diagnostics, and BF16/ULP-style diagnostics. A BF16 fusion or
+rounding explanation requires an external evidence marker; this branch has not
+executed a layer-by-layer TensorRT engine ablation.
+
+This repository does **not** yet contain a π0.5 exporter, engine builder, or a
+verified 1.5× deployment result.
+
+## 3. Continuous-action speculative inference
+
+Token speculation is adapted to an action chunk rather than discrete tokens:
+
+1. a draft policy proposes a complete continuous chunk in one forward pass;
+2. the main policy evaluates candidate points along the draft-to-main
+   interpolation path through a batched **B×K parallel verifier**;
+3. only the longest contiguous compliant prefix is accepted; and
+4. the rejected suffix is stitched from the verifier's mean across the `K`
+   main-model clean-action candidates.
+
+When acceptance collapses, this branch's configurable override performs a
+**same-round full-main takeover**. Metrics label this as a deliberate override
+because the audited `realtime-vla-flash` implementation schedules its fallback
+for the following round.
+
+The orchestration, prefix contract, gripper capability guard, and fallback are
+implemented and tested. A checkpoint-bound π0.5 draft, normalized model-space
+parallel verifier, and production Triton kernel are **not checked in**;
+production assembly therefore requires external factories rather than silently
+using a mock policy.
+
+## 4. RTC asynchronous inference
+
+The planner generates the next action chunk while the current chunk executes,
+so the action-execution window can overlap model compute. The implementation
+preserves the distinction between:
+
+- model compute time;
+- planner queue wait;
+- caller blocking while waiting for a planner result (legacy metric key
+  `robot_wait_ms`), not physical robot/SDK execution time; and
+- end-to-end control-loop time.
+
+Native OpenPI RTC carries normalized `ActionChunk.model_values` from the exact
+forward that produced the environment action. On the next request it:
+
+- **hard-freezes the already inferred prefix** before and after every denoising
+  update;
+- aligns the overlap against the previous chunk in model space;
+- applies differentiable/VJP guidance with position weights that decay
+  exponentially; and
+- fails closed when lineage, geometry, or capability declarations disagree.
+
+Output blending is available only as an explicitly named host fallback; it is
+not reported as native RTC. Planner shutdown also fails loudly when an in-flight
+GPU/model forward cannot be safely joined—Python thread cancellation is not
+treated as accelerator cleanup.
+
+## Policy–robot semantics and hardware safety
+
+`PolicyRobotAdapterPolicy` converts robot observations into checkpoint space
+before inference and converts policy actions into absolute joint targets before
+the controller sees them. The built-in affine adapter supports:
+
+| `action_mode` | Policy-space absolute target at step `t` |
 |---|---|
 | `absolute` | `a[t]` |
 | `delta_from_observation` | `q_obs + a[t]` |
 | `integrated_delta` | `q_obs + cumsum(a)[t]` |
 | `velocity` | `q_obs + period_s * cumsum(a)[t]` |
 
-Semantic conversion happens first. The adapter then applies the declared
-permutation and affine calibration
-`q_robot[r] = scale[r] * q_policy[robot_from_policy[r]] + offset[r]`, and only
-then enforces robot position and per-command step limits. The inverse relation
-adapts positions and velocities back into policy order. Action/state dimensions,
-names, units, camera keys, finite values, observation provenance, and the exact
-control period are checked before a target is returned.
+Permutation, scale/offset calibration, names, units, dimensions, control period,
+finite values, joint limits, per-command deltas, and observation provenance are
+validated before a target is returned. `end_effector` and
+`checkpoint_native` frames require a reviewed custom `module:function` adapter;
+the generic adapter refuses to guess them.
 
-The generic adapter intentionally rejects `end_effector` and
-`checkpoint_native` frames. Those frames use the declared custom adapter
-`module:function`. The included LIBERO boundary loads
-`robot.options.kinematics_factory`, whose factory receives `RobotConfig` and
-must return an engine with both callables:
+### Supported boundaries
 
-```python
-encode_policy_state(observation) -> array | RobotState
-policy_chunk_to_robot_targets(
-    observation, policy_values, period_s, action_adapter_config
-) -> array[T, robot_action_dim]  # absolute robot-joint targets
-```
+- **SO101 / LeRobot:** five arm joints plus gripper. A six-coordinate Cartesian
+  delta cannot be relabelled as six motors; the 7-D LIBERO-style checkpoint
+  requires task-specific FK/IK and gripper conversion.
+- **Dobot Nova TCP/IP V4:** six `ServoJ` arm targets in degrees, 30004 feedback,
+  optional binary DO gripper with independent DI feedback, controller/collision
+  checks, active-low safety-state handling, and safety-skin approach fields.
+- **ROS2:** standard `sensor_msgs/JointState` and
+  `trajectory_msgs/JointTrajectory`, with acknowledged Trigger or Dobot V4
+  stop/emergency-stop services and real-mode endpoint preflight.
+- **Cameras:** OpenCV, RealSense, ROS2 `sensor_msgs/Image`, and Mock. Multi-camera
+  reads share one global timeout and pass skew, freshness, and robot/camera
+  timestamp gates.
 
-The adapter checks required cameras, state/action dimensions, timestamps,
-control period, finite values, joint limits, and per-step limits; it never clips
-an invalid IK result into range. The SO101 and Dobot LIBERO examples declare
-mixed semantics: Cartesian coordinates 0–5 are
-`delta_from_observation`, while coordinate 6 is an `absolute` gripper command.
-The engine must implement that checkpoint-specific convention, FK/state
-encoding, IK, units, and gripper conversion explicitly.
+All real templates start in `dry_run` and retain deliberate placeholder
+calibration/SDK values. Real writes require `action_adapter.validated=true`, a
+non-placeholder calibration/kinematics/endpoints contract,
+`limits_require_hardware_validation=false` after physical limit review,
+`robot.dry_run=false`, **and** the CLI `--allow-motion` switch. Dry-run suppresses
+target, stop, and emergency writes; changing one Boolean cannot authorize a
+robot. Command publication itself has no universal ACK: the code fail-closes on
+send/response errors and requires acknowledgement on configured
+stop/emergency-stop service paths.
 
-An unvalidated identity remains available for dry-run plumbing. Setting
-`robot.dry_run=false` requires `action_adapter.validated=true`, a reviewed
-non-placeholder adapter/kinematics factory and calibration ID, complete
-names/units/mapping evidence where applicable, and hardware-validated limits.
-The example kinematics factories and calibration IDs are deliberate
-placeholders, so changing only `dry_run` cannot authorize motion.
+## What the repository currently proves
 
-## Install
+| Scope | Observed evidence | Defensible claim | Not established |
+|---|---|---|---|
+| CPU/unit | **131 passed** on local Windows/Python 3.10 and remote Linux; Ruff/format/compile gates pass | deterministic component contracts and error paths | policy quality or latency |
+| Mock runtime | 16 control steps, two chunks, bounded shutdown | observation→policy→controller plumbing | simulator or physical success |
+| Actor geometry | H=50×A=7 actor = **1,818,542** parameters | architecture/count contract | effectiveness of those parameters |
+| CUDA Graph | RTX 4080 SUPER synthetic FP16 MLP, bit-exact, 0.150132→0.050680 ms mean (**2.9623×**) | capture utility works for that synthetic protocol | π0.5 48.2→42.8 ms |
+| RTC VJP | synthetic CUDA 50×7 chunk; prefix bit-exact, five VJP steps, loss 0.376497→0.364270 | generic hard-prefix/autograd mechanism | OpenPI latency or robot quality |
+| TensorRT | CPU fakes + parity/layer-diff protocol unit tests | audit contracts | π0.5 engine run/export, 1.5×, layer ablation, or BF16 root cause |
+| Hardware | SDK/API adapters, Mock lifecycle, fail-closed gates | integration boundary is prepared | SO101/Nova/ROS2 physical validation |
 
-Start from the RLinf embodied environment for OpenPI. Add only the backends used
-by the robot:
+The synthetic GPU figures characterize tiny isolated components only. They are
+not substitutes for a checkpoint-bound end-to-end benchmark. The remote
+artifacts are bound to implementation commit `fb0d04a8`; later changes must
+rerun applicable gates before inheriting those measurements.
+
+<details>
+<summary><strong>Historical and external numbers: attribution boundary</strong></summary>
+
+The following numbers were supplied as target claims, recovered from historical
+work, or reported by upstream projects; they are **not results reproduced by
+this branch**:
+
+| Number | Correct attribution / current blocker |
+|---|---|
+| reported 112 self-rollouts; 75.0%→96.9%; fewer drops | recovered artifacts contain 80+32 historical training episodes from a mixed reference/actor/heuristic closed-loop policy—not pure actor self-rollouts—plus a 128-episode comparison with different seeds/guards/routes in IsaacLab/Franka simulation; no paired SO101/Nova physical evidence |
+| CUDA Graph 48.2→42.8 ms, bit-exact | historical StarVLA/Qwen visual-path evidence, not yet π0.5 |
+| TensorRT 1.5×; BF16 fusion rounding | diagnostic hypothesis/path; no checkpoint-bound π0.5 engine evidence |
+| Speculative 58.0→19.1 ms, 3.04×; average success −0.3 pp | confirmed only as an upstream FLASH-page report; no same-protocol reproduction here |
+| 94.1%→93.8%; fallback 58.4%→84.6%; kernel 1.46×; algorithm 1.66× | reported exact values whose recomputable raw evidence is not closed in the audited sources |
+| RTC 5.6 s→4 ms; single inference 76→97 ms | reported external values; clock semantics and the raw source package remain unresolved, with no local end-to-end reproduction |
+
+See the [claim-to-evidence boundary](../../../docs/fibocom_vla_evidence/claim_boundary.md)
+for the full audit.
+
+</details>
+
+## Quick start: safe component path
+
+Use the official
+[RLinf installation guide](https://rlinf.readthedocs.io/en/latest/rst_source/start/installation.html)
+to create the Python 3.10/3.11 embodied environment. From the repository root,
+install this checkout and only the SDK dependencies needed by the selected
+hardware backend:
 
 ```bash
-pip install -r examples/embodiment/fibocom_vla/requirements/base.txt
-pip install -r examples/embodiment/fibocom_vla/requirements/so101.txt
-# or
-pip install -r examples/embodiment/fibocom_vla/requirements/dobot_nova.txt
+python -m pip install -e ".[embodied]"
 ```
 
-LeRobot `0.4.4` is pinned because it supports Python 3.10/3.11 used by RLinf
-`release/v0.2`; current LeRobot main requires Python 3.12. ROS2 Python packages
-come from the selected ROS2 distribution rather than PyPI.
+LeRobot, the Dobot V4 SDK, ROS2 packages, and camera drivers are loaded lazily
+and should be installed from their official release/distribution when that
+backend is selected. They are not silently installed by this example.
 
-## CPU gates
+Run the no-motion gates:
 
 ```bash
 python -m rlinf.projects.fibocom_vla.cli validate-config \
@@ -197,25 +288,59 @@ python -m rlinf.projects.fibocom_vla.cli mock-smoke \
   --config examples/embodiment/fibocom_vla/config/mock.json \
   --steps 16
 
-pytest -q tests/unit_tests/projects/fibocom_vla
+python -m pytest -q tests/unit_tests/projects/fibocom_vla
 ```
 
-## π0.5 checkpoint dry run and fail-closed assembly
+On a CUDA host, generate a self-describing **synthetic component** artifact:
 
-The model path and checkpoint-specific OpenPI data config are deliberately not
-embedded in source control. `FIBOCOM_PI05_MODEL_PATH` and
-`FIBOCOM_PI05_CONFIG_NAME` are always required; preprocessing semantics are not
-guessed. The loaded model's `action_horizon` must exactly match the stack
-configuration. RLinf v0.2's stock `pi05_libero` horizon is 10 and is therefore
-incompatible with the checked-in 50-step residual examples; `action_chunk`
-only truncates output and cannot extend it. Register/select a checkpoint data
-config trained for horizon 50 rather than silently overriding the stock
-checkpoint. If residual RL is enabled, `FIBOCOM_RESIDUAL_CHECKPOINT` is also
-required. If speculative inference is enabled, both
-`FIBOCOM_DRAFT_POLICY_FACTORY` and
-`FIBOCOM_PARALLEL_VERIFIER_FACTORY` must resolve to compatible factories.
-Omitting any environment variable required by the enabled stack fails closed
-instead of silently running a different policy.
+```bash
+PYTHONPATH=. python examples/embodiment/fibocom_vla/benchmark_cuda_graph.py \
+  --output artifacts/cuda_graph_component.json \
+  --batch-size 8 --width 256 --depth 4 --dtype float16 \
+  --capture-warmup 3 --warmup 5 --repetitions 50
+```
+
+## Residual-training entry point
+
+Initialize the residual actor/Q/V state and record the base-model identity before
+collecting rollouts:
+
+```bash
+python -m rlinf.projects.fibocom_vla.rl.train_cli initialize \
+  --config examples/embodiment/fibocom_vla/config/so101_realsense.json \
+  --output artifacts/residual_init.pt \
+  --base-model pi0.5 \
+  --base-model-revision YOUR_IMMUTABLE_PI05_CHECKPOINT_ID \
+  --seed 17 --device cuda
+```
+
+After the collector has written an archive bound to that checkpoint and config,
+run the declared single update:
+
+```bash
+python -m rlinf.projects.fibocom_vla.rl.train_cli update \
+  --config examples/embodiment/fibocom_vla/config/so101_realsense.json \
+  --input-checkpoint artifacts/residual_init.pt \
+  --rollout artifacts/rollout.npz \
+  --output artifacts/residual_updated.pt \
+  --device cuda
+```
+
+Mismatched config hashes, recorded base-model revisions, residual
+behavior-checkpoint hashes, or rollout geometry are rejected before optimization.
+`--base-model` and `--base-model-revision` are operator-supplied metadata: the
+CLI accepts any non-empty string and does not load/hash π0.5, so replace
+`YOUR_IMMUTABLE_PI05_CHECKPOINT_ID` with a real immutable ID. These two commands
+operate on residual checkpoints/archives only; they do not connect to the robot
+named by the configuration.
+
+## Connect your π0.5 assets
+
+Model and checkpoint-specific preprocessing are never guessed. The loaded
+OpenPI model's `action_horizon` must equal the stack horizon. RLinf v0.2's stock
+`pi05_libero` configuration is H=10, while the checked-in residual examples are
+H=50; `action_chunk` can truncate but cannot extend a checkpoint. Register a
+real H=50 data/model config instead of overriding metadata.
 
 ```bash
 export FIBOCOM_PI05_MODEL_PATH=/absolute/path/to/pi05/checkpoint
@@ -223,7 +348,9 @@ export FIBOCOM_PI05_CONFIG_NAME=your_registered_pi05_h50_config
 export FIBOCOM_PI05_DEVICE=cuda
 export FIBOCOM_MAIN_CAMERA=main
 export FIBOCOM_WRIST_CAMERA=wrist
-export FIBOCOM_RESIDUAL_CHECKPOINT=/absolute/path/to/residual.pt
+export FIBOCOM_RESIDUAL_CHECKPOINT=artifacts/residual_updated.pt
+
+# Required only when speculative.enabled=true:
 export FIBOCOM_DRAFT_POLICY_FACTORY=your_package.factories:create_draft
 export FIBOCOM_PARALLEL_VERIFIER_FACTORY=your_package.factories:create_verifier
 
@@ -233,45 +360,85 @@ python -m rlinf.projects.fibocom_vla.cli run \
   --steps 32
 ```
 
-The checked-in SO101 file deliberately contains placeholder camera,
-calibration, and kinematics values, so the command fails before connecting.
-After replacing those placeholders with reviewed integration values while
-keeping `dry_run=true`, it connects read-only and does not send joint targets.
-Real motion requires all of the following:
+`FIBOCOM_RESIDUAL_CHECKPOINT` must retain the adjacent
+`artifacts/residual_updated.pt.sha256` sidecar emitted by `train_cli`; loading
+fails closed without it. The checked-in real-robot templates remain
+motion-blocked by the explicit validation, calibration, kinematics, and limit
+gates. Camera/topic/SDK placeholder strings are not globally pattern-checked;
+depending on the backend they may fail during connection preflight or first I/O
+and must be reviewed manually. Keep `dry_run=true` for the first read-only
+integration.
 
-1. replace placeholder serial/IP/joint limits with hardware-verified values;
-2. replace the `action_adapter` and `kinematics_factory` placeholders with
-   checkpoint-specific action/state dimensions, names, units, camera contract,
-   reviewed FK/IK, gripper conversion, and a non-placeholder calibration ID;
-3. set `robot.dry_run` to `false`;
-4. for direct Dobot, configure control request/enable gates and independent
-   binary gripper DI feedback; for ROS2, verify the selected service backend,
-   acknowledged stop services, command subscriber, and SI joint units;
-5. pass `--allow-motion` to a finite run;
-6. keep the physical emergency stop reachable.
+### Motion authorization checklist
 
-## Evidence boundary
+Before any physical write:
 
-The commands above cover CPU unit, Mock, and named component scope only. They
-do not establish GPU performance, TensorRT equivalence, simulation success, or
-physical-robot success; those claims remain gated until dedicated runs produce
-reviewable artifacts. In particular:
+1. replace serial/IP/topic/service placeholders and verify feedback freshness;
+2. bind the exact checkpoint camera/state/action contract and H=50 manifest;
+3. validate joint names, order, units, scale/offset, limits, and control period;
+4. replace every calibration/kinematics/endpoint placeholder, set
+   `action_adapter.validated=true`, and only after physical limit review set
+   `limits_require_hardware_validation=false`;
+5. install and review task-specific FK/IK and gripper conversion where required;
+6. complete a read-only dry run, then a separately supervised bounded-motion
+   test with `robot.dry_run=false` and `--allow-motion`;
+7. for 7-D Dobot control, set
+   `gripper_feedback_backend=digital_input` and verify independent DI feedback;
+8. verify acknowledged stop/emergency-stop behavior and keep the physical
+   emergency stop reachable.
 
-- historical `48.1572→42.7936 ms` bit-exact evidence belongs to a StarVLA/Qwen
-  visual path, not automatically to π0.5;
-- `58.0→19.1 ms` and `3.04×` are upstream FLASH results unless reproduced under
-  this repository's benchmark protocol;
-- RTC `76→97 ms` describes extra model compute in a published setting, while
-  `5.6 s→4 ms` can only describe exposed waiting/idle time under a stated clock;
-- the currently recovered `112`-trajectory and `75.0%→96.875%` artifacts mix
-  IsaacLab/Franka routes and different seeds; they are not same-protocol
-  SO101/Nova or physical-robot evidence and cannot support the résumé claim.
+## Repository map
 
-The current production-integration boundary is also explicit. Speculative
-assembly still requires checkpoint-specific draft and parallel-verifier
-factories; no π0.5 draft checkpoint or normalized model-space verifier is
-checked in. `ShapeStableCUDAGraph` is a tested capture utility, while the
-example benchmark is a synthetic MLP rather than a wired OpenPI visual
-subgraph. The TensorRT module is an executor/parity/ablation protocol, not a
-π0.5 exporter or engine builder. Those paths remain blocked until the model
-manifest, GPU environment, and checkpoint-specific integration are available.
+```text
+rlinf/projects/fibocom_vla/
+├── rl/          residual actor, value/twin-Q, binary-outcome transform, GAE/PPO
+├── inference/   profiling, CUDA Graph, speculative, RTC, TensorRT diagnostics
+├── hardware/    semantic/kinematics adapters, SO101, Dobot, ROS2, cameras
+├── runtime/     synchronized control, safety gates, timing, lifecycle
+├── factories.py fail-closed π0.5 / residual / speculative stack assembly
+└── cli.py       config validation, actor report, Mock smoke, bounded run
+
+examples/embodiment/fibocom_vla/
+├── config/      Mock and locked real-robot templates
+├── schema/      action-adapter JSON schema
+└── benchmark_cuda_graph.py
+
+docs/fibocom_vla_evidence/
+├── claim_boundary.md
+├── reproduction_matrix.csv
+├── source_lock.json
+├── local_validation_20260825.md
+└── remote_validation_20260825.md
+```
+
+## Evidence and audited sources
+
+- [Claim boundary](../../../docs/fibocom_vla_evidence/claim_boundary.md)
+- [Reproduction matrix](../../../docs/fibocom_vla_evidence/reproduction_matrix.csv)
+- [Local validation record](../../../docs/fibocom_vla_evidence/local_validation_20260825.md)
+- [Remote CUDA component record](../../../docs/fibocom_vla_evidence/remote_validation_20260825.md)
+- [Pinned source identities](../../../docs/fibocom_vla_evidence/source_lock.json)
+
+| Source | Audited revision | Role |
+|---|---|---|
+| [RLinf](https://github.com/RLinf/RLinf) | `release/v0.2` / `46213e88` | implementation base; OpenPI and RL conventions |
+| RLinf main | `230ea79b` | compatibility comparison only |
+| [FlashRT](https://github.com/flashrt-project/FlashRT) | `f72192b2` | capture/exactness and runtime design audit |
+| [realtime-vla-flash](https://github.com/dexmal/realtime-vla-flash) | `da6cecca` | continuous draft, verification, prefix and RTC audit |
+| [LeRobot](https://github.com/huggingface/lerobot) | `v0.4.4` / `8fff0fde` | SO101 API contract |
+| [Dobot TCP/IP V4](https://github.com/Dobot-Arm/TCP-IP-Python-V4) | `55ec1ec8` | Nova direct-control contract |
+| [Dobot ROS2 V4](https://github.com/Dobot-Arm/DOBOT_6Axis_ROS2_V4) | `def21d05` | ROS2 stop/emergency contract |
+
+## Remaining integration milestones
+
+- bind and freeze a real π0.5 H=50 checkpoint/config manifest;
+- capture a checkpoint-specific OpenPI visual subgraph and run paired AB/BA
+  latency/equivalence benchmarks;
+- implement π0.5 TensorRT export/build/runtime selection;
+- provide a checkpoint-bound draft and normalized model-space verifier;
+- run paired same-reset/seed simulator evaluation before quoting success rates;
+- finish read-only, bounded-motion, and task-level validation on SO101/Nova.
+
+This project follows the parent repository's [Apache-2.0 license](../../../LICENSE).
+Its core rule is simple: **a code path, an upstream number, and a reproduced
+result are three different things**—each must retain its own provenance.
