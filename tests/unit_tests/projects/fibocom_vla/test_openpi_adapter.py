@@ -241,3 +241,69 @@ def test_predict_with_rtc_fails_closed_without_model_space_lineage():
         _policy(model).predict_with_rtc(_observation(), conditioning)
 
     assert model.prefix_calls == 0
+
+
+def test_aloha_adapter_preserves_ordered_two_wrist_camera_axis():
+    model = _FakeOpenPI()
+    policy = RLinfOpenPiChunkPolicy(
+        model,
+        OpenPiAdapterConfig(
+            main_camera="cam_high",
+            wrist_cameras=("cam_left_wrist", "cam_right_wrist"),
+            expected_state_names=("joint_1", "joint_2"),
+        ),
+    )
+    observation = Observation(
+        state=RobotState(
+            np.zeros(2, dtype=np.float32),
+            ("joint_1", "joint_2"),
+        ),
+        images={
+            "cam_high": np.full((4, 5, 3), 1, dtype=np.uint8),
+            "cam_left_wrist": np.full((4, 5, 3), 2, dtype=np.uint8),
+            "cam_right_wrist": np.full((4, 5, 3), 3, dtype=np.uint8),
+        },
+        instruction="stack the blocks",
+    )
+
+    env_observation = policy._to_env_observation(observation)
+
+    assert tuple(env_observation["main_images"].shape) == (1, 4, 5, 3)
+    assert tuple(env_observation["wrist_images"].shape) == (1, 2, 4, 5, 3)
+    assert torch.all(env_observation["wrist_images"][:, 0] == 2)
+    assert torch.all(env_observation["wrist_images"][:, 1] == 3)
+    assert env_observation["extra_view_images"] is None
+
+
+def test_adapter_checks_checkpoint_state_names_on_every_observation():
+    policy = RLinfOpenPiChunkPolicy(
+        _FakeOpenPI(),
+        OpenPiAdapterConfig(expected_state_names=("joint_1", "joint_2")),
+    )
+
+    policy._to_env_observation(_observation())
+    renamed = Observation(
+        state=RobotState(
+            np.zeros(2, dtype=np.float32),
+            ("joint_2", "joint_1"),
+        ),
+        images={"main": np.zeros((4, 4, 3), dtype=np.uint8)},
+        instruction="stack the blocks",
+    )
+    with pytest.raises(ShapeMismatchError, match="joint_names"):
+        policy._to_env_observation(renamed)
+
+
+def test_adapter_rejects_ambiguous_or_missing_wrist_camera_mapping():
+    with pytest.raises(ValueError, match="not both"):
+        OpenPiAdapterConfig(
+            wrist_camera="wrist",
+            wrist_cameras=("left", "right"),
+        )
+
+    policy = RLinfOpenPiChunkPolicy(
+        _FakeOpenPI(),
+        OpenPiAdapterConfig(wrist_cameras=("left", "right")),
+    )
+    with pytest.raises(ShapeMismatchError, match="'left', 'right'"):
+        policy._to_env_observation(_observation())

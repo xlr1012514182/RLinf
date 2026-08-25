@@ -35,6 +35,7 @@ from .inference.openpi_rtc import (
     OPENPI_RTC_DIAGNOSTICS_KEY,
     OPENPI_RTC_PREFIX_FEATURE_KEY,
     OpenPIRTCContext,
+    _model_observation_from_dict,
     predict_action_batch_with_openpi_features,
 )
 from .inference.rtc import RTCConditioning
@@ -47,9 +48,38 @@ class OpenPiAdapterConfig:
 
     main_camera: str = "main"
     wrist_camera: str | None = None
+    wrist_cameras: tuple[str, ...] = ()
     period_s: float = 0.05
     state_indices: tuple[int, ...] | None = None
     action_indices: tuple[int, ...] | None = None
+    expected_state_names: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Normalize and validate the ordered multi-camera declaration."""
+
+        object.__setattr__(self, "wrist_cameras", tuple(self.wrist_cameras))
+        object.__setattr__(
+            self, "expected_state_names", tuple(self.expected_state_names)
+        )
+        if self.wrist_camera is not None and self.wrist_cameras:
+            raise ValueError("declare wrist_camera or wrist_cameras, not both")
+        names = (self.main_camera, *self.resolved_wrist_cameras)
+        if any(not name.strip() for name in names):
+            raise ValueError("OpenPI camera names must not be blank")
+        if len(set(names)) != len(names):
+            raise ValueError("OpenPI camera names must be unique")
+        if any(not name.strip() for name in self.expected_state_names):
+            raise ValueError("OpenPI expected state names must not be blank")
+        if len(set(self.expected_state_names)) != len(self.expected_state_names):
+            raise ValueError("OpenPI expected state names must be unique")
+
+    @property
+    def resolved_wrist_cameras(self) -> tuple[str, ...]:
+        """Return the legacy single wrist or ordered multi-wrist mapping."""
+
+        if self.wrist_camera is not None:
+            return (self.wrist_camera,)
+        return self.wrist_cameras
 
 
 class RLinfOpenPiChunkPolicy:
@@ -64,19 +94,44 @@ class RLinfOpenPiChunkPolicy:
     def _to_env_observation(self, observation: Observation) -> dict[str, Any]:
         if self.config.main_camera not in observation.images:
             raise ShapeMismatchError(f"missing main camera {self.config.main_camera!r}")
+        if (
+            self.config.expected_state_names
+            and tuple(observation.state.joint_names) != self.config.expected_state_names
+        ):
+            raise ShapeMismatchError(
+                "OpenPI state joint_names do not match the checkpoint state semantics"
+            )
         state = observation.state.joint_positions
         if self.config.state_indices is not None:
             state = state[np.asarray(self.config.state_indices, dtype=np.int64)]
+        if self.config.expected_state_names and state.shape != (
+            len(self.config.expected_state_names),
+        ):
+            raise ShapeMismatchError(
+                "OpenPI state dimension does not match the checkpoint state semantics"
+            )
         main_image = np.asarray(observation.images[self.config.main_camera])
         wrist_images = None
-        if self.config.wrist_camera is not None:
-            if self.config.wrist_camera not in observation.images:
+        wrist_cameras = self.config.resolved_wrist_cameras
+        if wrist_cameras:
+            missing = [
+                camera for camera in wrist_cameras if camera not in observation.images
+            ]
+            if missing:
                 raise ShapeMismatchError(
-                    f"missing wrist camera {self.config.wrist_camera!r}"
+                    "missing wrist camera(s): "
+                    + ", ".join(repr(name) for name in missing)
                 )
+            # RLinf's environment observation is batched as [B, W, H, W, C].
+            # LIBERO uses W=1; Aloha/RoboTwin requires the ordered left/right
+            # pair W=2.  Keeping this axis explicit prevents a single image's
+            # first two pixel rows from being mistaken for two wrist cameras.
             wrist_images = torch.from_numpy(
                 np.ascontiguousarray(
-                    observation.images[self.config.wrist_camera][None, ...]
+                    np.stack(
+                        [observation.images[camera] for camera in wrist_cameras],
+                        axis=0,
+                    )[None, ...]
                 )
             )
         return {
@@ -84,9 +139,26 @@ class RLinfOpenPiChunkPolicy:
                 np.ascontiguousarray(main_image[None, ...])
             ),
             "wrist_images": wrist_images,
+            "extra_view_images": None,
             "states": torch.from_numpy(np.ascontiguousarray(state[None, ...])),
             "task_descriptions": [observation.instruction],
         }
+
+    def prepare_model_observation(self, observation: Observation) -> Any:
+        """Apply the exact RLinf/OpenPI evaluation transforms without sampling.
+
+        Production speculative inference needs the same model ``Observation``
+        that ordinary :meth:`predict` builds before prefix preparation.  Keep
+        that boundary on the concrete base policy so callers cannot bypass the
+        checkpoint's observation processor, input transform, or precision
+        processor with an already-normalized lookalike.
+        """
+
+        env_observation = self._to_env_observation(observation)
+        to_process_obs = self.model.obs_processor(dict(env_observation))
+        processed_obs = self.model.input_transform(to_process_obs, transpose=False)
+        processed_obs = self.model.precision_processor(processed_obs)
+        return _model_observation_from_dict(self.model, processed_obs)
 
     def predict(self, observation: Observation) -> PolicyOutput:
         """Run ordinary eval sampling with a same-forward pooled feature."""

@@ -17,9 +17,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import json
 import logging
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -70,6 +72,65 @@ def _actor_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _verify_checkpoint_assets(args: argparse.Namespace) -> int:
+    from .assets import load_and_verify_checkpoint_assets
+
+    repository_root = Path(__file__).resolve().parents[3]
+    verified = load_and_verify_checkpoint_assets(
+        args.manifest,
+        args.root,
+        repository_root=repository_root,
+    )
+    if args.config is not None:
+        verified.manifest.validate_stack(StackConfig.from_json(args.config))
+    runtime = verified.manifest.runtime
+    _print_json(
+        {
+            "verified": True,
+            "root": verified.root,
+            "manifest": verified.manifest_path,
+            "repository_id": verified.manifest.repository_id,
+            "revision": verified.manifest.revision,
+            "config_name": runtime.config_name,
+            "asset_id": runtime.asset_id,
+            "norm_stats": verified.norm_stats_path,
+            "action_horizon": runtime.action_horizon,
+            "model_action_dim": runtime.model_action_dim,
+            "environment_action_dim": runtime.environment_action_dim,
+            "raw_state_dim": runtime.state_dim,
+            "model_state_dim": runtime.model_state_dim,
+            "camera_keys": runtime.cameras.observation_keys,
+            "file_count": len(verified.manifest.files),
+            "hash_mode": "sha256_all_declared_files",
+        }
+    )
+    return 0
+
+
+def _verify_draft_asset(args: argparse.Namespace) -> int:
+    from .draft_assets import load_draft_asset_registry
+
+    registry = load_draft_asset_registry(args.registry)
+    verified = registry.verify_asset(args.suite, args.root)
+    _print_json(
+        {
+            "verified": True,
+            "suite": verified.asset.suite,
+            "path": verified.path,
+            "size": verified.asset.size,
+            "sha256": verified.asset.sha256,
+            "model_repository": registry.model_repository,
+            "model_revision": registry.model_revision,
+            "code_revision": registry.code_revision,
+            "published_base_contract": asdict(registry.base_contract),
+            "production_compatibility": "pi0_libero_exact_contract_only",
+            "pi05_direct_use": False,
+            "pi05_allowed_use": "verified_initialization_only_before_retraining",
+        }
+    )
+    return 0
+
+
 def _mock_smoke(args: argparse.Namespace) -> int:
     config = StackConfig.from_json(args.config)
     if config.robot.backend != "mock" or any(
@@ -94,6 +155,103 @@ def _mock_smoke(args: argparse.Namespace) -> int:
         instruction=args.instruction,
     ).run(maximum_control_steps=args.steps)
     _print_json(asdict(result))
+    return 0
+
+
+def _openpi_checkpoint_smoke(args: argparse.Namespace) -> int:
+    """Load the manifest-bound checkpoint and run one synthetic H=50 forward."""
+
+    import numpy as np
+    import torch
+
+    from .contracts import Observation, RobotState
+    from .factories import create_openpi_policy_from_env
+
+    config = StackConfig.from_json(args.config)
+    if config.residual_rl.enabled or config.speculative.enabled:
+        raise ValueError(
+            "openpi-checkpoint-smoke requires residual_rl/speculative disabled"
+        )
+    policy = create_openpi_policy_from_env(config)
+    model = getattr(policy, "model", None)
+    if model is None:
+        raise TypeError("checkpoint smoke requires the base RLinf OpenPI policy")
+    identity = getattr(policy, "fibocom_checkpoint_identity", None)
+    if not isinstance(identity, dict):
+        raise RuntimeError("checkpoint smoke requires a verified asset manifest")
+
+    timestamp_ns = time.monotonic_ns()
+    state = np.zeros(config.robot.action_dim, dtype=np.float32)
+    for index, (lower, upper) in enumerate(
+        zip(config.robot.joint_lower, config.robot.joint_upper, strict=True)
+    ):
+        if not lower <= 0 <= upper:
+            state[index] = np.float32((lower + upper) / 2)
+    images = {
+        camera.name: np.zeros((camera.height, camera.width, 3), dtype=np.uint8)
+        for camera in config.cameras
+    }
+    observation = Observation(
+        state=RobotState(
+            joint_positions=state,
+            joint_names=config.robot.joint_names,
+            timestamp_ns=timestamp_ns,
+        ),
+        images=images,
+        instruction=args.instruction,
+        timestamp_ns=timestamp_ns,
+    )
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+    output = policy.predict(observation)
+    action = np.ascontiguousarray(output.action.values, dtype=np.float32)
+    model_actions = output.action.model_values
+    if model_actions is None:
+        raise RuntimeError("OpenPI smoke output lost normalized model actions")
+    model_actions = np.ascontiguousarray(model_actions, dtype=np.float32)
+    load_report = getattr(model, "_rlinf_checkpoint_load_report", None)
+    if not isinstance(load_report, dict):
+        raise RuntimeError("loaded model lacks its checkpoint compatibility report")
+    if load_report.get("missing_keys") or load_report.get("unexpected_keys"):
+        raise RuntimeError("checkpoint smoke observed incompatible state-dict keys")
+    if action.shape != (
+        config.residual_rl.action_horizon,
+        config.residual_rl.action_dim,
+    ):
+        raise RuntimeError(f"unexpected environment action shape: {action.shape}")
+    if model_actions.shape != (
+        identity["action_horizon"],
+        identity["model_action_dim"],
+    ):
+        raise RuntimeError(f"unexpected model action shape: {model_actions.shape}")
+    parameter_count = sum(parameter.numel() for parameter in model.parameters())
+    _print_json(
+        {
+            "smoke_passed": True,
+            "validation_scope": "one_synthetic_observation_not_a_benchmark",
+            "checkpoint_identity": identity,
+            "load_report": {
+                "source_kind": load_report.get("source_kind"),
+                "selected_paths": load_report.get("selected_paths"),
+                "missing_keys": load_report.get("missing_keys"),
+                "unexpected_keys": load_report.get("unexpected_keys"),
+                "data_asset_id": load_report.get("data_asset_id"),
+                "use_quantile_norm": load_report.get("use_quantile_norm"),
+            },
+            "parameter_count": parameter_count,
+            "environment_action_shape": action.shape,
+            "model_action_shape": model_actions.shape,
+            "environment_action_sha256": hashlib.sha256(action.tobytes()).hexdigest(),
+            "model_action_sha256": hashlib.sha256(model_actions.tobytes()).hexdigest(),
+            "all_outputs_finite": bool(
+                np.isfinite(action).all() and np.isfinite(model_actions).all()
+            ),
+            "policy_path": output.path,
+            "stack_layers": getattr(policy, "fibocom_stack_layers", ()),
+            "seed": args.seed,
+        }
+    )
     return 0
 
 
@@ -147,11 +305,35 @@ def build_parser() -> argparse.ArgumentParser:
     actor.add_argument("--config", type=Path, required=True)
     actor.set_defaults(handler=_actor_report)
 
+    assets = subparsers.add_parser("verify-checkpoint-assets")
+    assets.add_argument("--manifest", type=Path, required=True)
+    assets.add_argument("--root", type=Path, required=True)
+    assets.add_argument("--config", type=Path)
+    assets.set_defaults(handler=_verify_checkpoint_assets)
+
+    draft = subparsers.add_parser("verify-draft-asset")
+    draft.add_argument("--registry", type=Path, required=True)
+    draft.add_argument("--root", type=Path, required=True)
+    draft.add_argument(
+        "--suite",
+        choices=("libero_10", "libero_goal", "libero_object", "libero_spatial"),
+        required=True,
+    )
+    draft.set_defaults(handler=_verify_draft_asset)
+
     mock = subparsers.add_parser("mock-smoke")
     mock.add_argument("--config", type=Path, required=True)
     mock.add_argument("--instruction", default="stack the block")
     mock.add_argument("--steps", type=int, default=16)
     mock.set_defaults(handler=_mock_smoke)
+
+    checkpoint_smoke = subparsers.add_parser("openpi-checkpoint-smoke")
+    checkpoint_smoke.add_argument("--config", type=Path, required=True)
+    checkpoint_smoke.add_argument(
+        "--instruction", default="stack the red block on the blue block"
+    )
+    checkpoint_smoke.add_argument("--seed", type=int, default=17)
+    checkpoint_smoke.set_defaults(handler=_openpi_checkpoint_smoke)
 
     run = subparsers.add_parser("run")
     run.add_argument("--config", type=Path, required=True)

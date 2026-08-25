@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "source": {
+    "model_repository": "Dexmal/RealtimeVLA-Flash",
+    "model_revision": "77b9a6f88fb100230bc78cb4cb361bd2e586f9fb",
+    "code_repository": "https://github.com/dexmal/realtime-vla-flash",
+    "code_revision": "da6ceccad603695a8a3d6fa14dd410c3aadb536f"
+  },
+  "base_contract": {
+    "model_family": "pi0",
+    "config_name": "pi0_libero",
+    "base_checkpoint_id": "gs://openpi-assets/checkpoints/pi0_libero",
+    "action_horizon": 50,
+    "model_action_dim": 32,
+    "environment_action_dim": 7,
+    "state_projection_dim": 32,
+    "prefix_embedding_dim": 2048,
+    "max_token_length": 48,
+    "normalization": "z_score",
+    "norm_stats_id": "physical-intelligence/libero",
+    "transform_id": "openpi:LeRobotLiberoDataConfig:delta_first_6",
+    "extra_delta_transform": true
+  },
+  "assets": [
+    {
+      "suite": "libero_10",
+      "filename": "draft_libero_10.pt",
+      "size": 441154745,
+      "sha256": "371d809745d688e03b2a09ccb89b509906530c7db48117236caf13e676333f17"
+    },
+    {
+      "suite": "libero_goal",
+      "filename": "draft_libero_goal.pt",
+      "size": 441154745,
+      "sha256": "33724426753c3b3a4ad5b0c3510bf5ac9255ee6338724bb5c58c7ea8b60429a1"
+    },
+    {
+      "suite": "libero_object",
+      "filename": "draft_libero_object.pt",
+      "size": 441154889,
+      "sha256": "ef4fec6fa4d7d013eb5d54123501159e066d80fa5d23f96690d5bd8aaf397c0a"
+    },
+    {
+      "suite": "libero_spatial",
+      "filename": "draft_libero_spatial.pt",
+      "size": 441154813,
+      "sha256": "88ef0bbf2ff89d51beaa742fc8a9cb0b1cbfc027282182e1f366f93895fed622"
+    }
+  ]
+}

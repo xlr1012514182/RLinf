@@ -440,7 +440,7 @@ install_openpi_model() {
             PYTHON_VERSION="3.10"
             create_and_sync_venv
             install_common_embodied_deps
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_behavior_env
             uv pip install protobuf==6.33.0
             ;;
@@ -448,34 +448,39 @@ install_openpi_model() {
             create_and_sync_venv
             install_common_embodied_deps
             install_maniskill_libero_env
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_flash_attn
             ;;
         metaworld)
             create_and_sync_venv
             install_common_embodied_deps
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_flash_attn
             install_metaworld_env
             ;;
         calvin)
             create_and_sync_venv
             install_common_embodied_deps
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
             install_flash_attn
             install_calvin_env
+            # Stock transformers and rlinf-transformer-openpi share the
+            # transformers/ directory but are different distributions. Remove
+            # stock files before installing the OpenPI fork so stale backends
+            # from transformers 4.57/5.x cannot be imported.
+            uv pip uninstall -y transformers || true
+            uv pip install "rlinf-openpi==0.1.1"
             ;;
         robocasa)
             create_and_sync_venv
             install_common_embodied_deps
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_flash_attn
             install_robocasa_env
             ;;
         robotwin)
             create_and_sync_venv
             install_common_embodied_deps
-            uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/openpi
+            uv pip install "rlinf-openpi==0.1.1"
             install_flash_attn
             install_robotwin_env
             ;;
@@ -484,6 +489,10 @@ install_openpi_model() {
             exit 1
             ;;
     esac
+
+    # Keep the source-locked OpenPI runtime on the versions used by current
+    # RLinf. Newer JAX releases remove layout APIs required by Orbax 0.11.13.
+    uv pip install -r "$SCRIPT_DIR/embodied/models/openpi.txt"
 
     # Replace transformers models with OpenPI's modified versions
     local py_major_minor
@@ -496,6 +505,9 @@ EOF
         "$VENV_DIR/lib/python${py_major_minor}/site-packages/transformers/"
     
     bash $SCRIPT_DIR/embodied/download_assets.sh --assets openpi
+    # rlinf-openpi installs the 4.53 transformers fork. Reassert its tokenizer
+    # range after all environment resolves, which can otherwise drift to 0.22+.
+    uv pip install "tokenizers>=0.21,<0.22"
     uv pip uninstall pynvml || true
 }
 
@@ -615,12 +627,16 @@ install_calvin_env() {
     local calvin_dir
     calvin_dir=$(clone_or_reuse_repo CALVIN_PATH "$VENV_DIR/calvin" https://github.com/mees/calvin.git --recurse-submodules)
 
-    uv pip install wheel cmake==3.18.4 setuptools==57.5.0 wheel==0.45.1
+    uv pip install wheel cmake==3.18.4.post1 setuptools==57.5.0 wheel==0.45.1
     # NOTE: Use a fork version of pyfasthash that fixes install on Python 3.11
     uv pip install git+${GITHUB_PREFIX}https://github.com/RLinf/pyfasthash.git --no-build-isolation
     uv pip install -e ${calvin_dir}/calvin_env/tacto
     uv pip install -e ${calvin_dir}/calvin_env
     uv pip install -e ${calvin_dir}/calvin_models
+    # calvin_models depends on sentence-transformers, which upgrades
+    # huggingface_hub to 1.x and transformers to 5.x. Restore the embodied
+    # pins before OpenPI deliberately replaces the stock transformers package.
+    uv pip install "huggingface-hub>=0.34.0,<1.0" "transformers<=4.57.6"
     uv pip install --upgrade hydra-core==1.3.2
 }
 

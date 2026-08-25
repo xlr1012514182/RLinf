@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "identity": {
+    "repository_id": "RLinf/RLinf-Pi05-RoboTwin-SFT-adjust_bottle",
+    "repository_url": "https://huggingface.co/RLinf/RLinf-Pi05-RoboTwin-SFT-adjust_bottle",
+    "revision": "fa8df6ed103db0f5549c122f3a17c00ba6426c98",
+    "license_status": "not_declared_by_checkpoint_repository"
+  },
+  "runtime": {
+    "model_family": "pi05",
+    "config_name": "pi05_aloha_robotwin",
+    "asset_id": "physical-intelligence/robotwin",
+    "action_horizon": 50,
+    "model_action_dim": 32,
+    "max_token_length": 200,
+    "discrete_state_input": true,
+    "environment_action_dim": 14,
+    "state_dim": 14,
+    "model_state_dim": 32,
+    "normalization": "quantile_q01_q99",
+    "norm_stats_path": "physical-intelligence/robotwin/norm_stats.json",
+    "checkpoint_config_path": "config.json",
+    "action_mode": "absolute",
+    "policy_frame": "joint",
+    "extra_delta_transform": true,
+    "adapt_to_pi": true,
+    "runtime_horizon_provenance": {
+      "publisher_config_value": 10,
+      "registered_openpi_config_value": 50,
+      "official_rlinf_yaml_value": 50,
+      "reason": "RLinf instantiates the registered pi05_aloha_robotwin Pi0Config; the downloaded publisher config is retained unchanged and is not the runtime geometry source."
+    },
+    "state_semantics": [
+      "left_joint_1",
+      "left_joint_2",
+      "left_joint_3",
+      "left_joint_4",
+      "left_joint_5",
+      "left_joint_6",
+      "left_gripper",
+      "right_joint_1",
+      "right_joint_2",
+      "right_joint_3",
+      "right_joint_4",
+      "right_joint_5",
+      "right_joint_6",
+      "right_gripper"
+    ],
+    "environment_action_semantics": [
+      "left_joint_1",
+      "left_joint_2",
+      "left_joint_3",
+      "left_joint_4",
+      "left_joint_5",
+      "left_joint_6",
+      "left_gripper",
+      "right_joint_1",
+      "right_joint_2",
+      "right_joint_3",
+      "right_joint_4",
+      "right_joint_5",
+      "right_joint_6",
+      "right_gripper"
+    ],
+    "delta_action_mask": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ],
+    "action_semantics": {
+      "pre_output_transform": "delta for 12 arm joints; absolute for two grippers",
+      "environment_output": "absolute Aloha joint/gripper targets after inverse delta and Aloha output transforms"
+    },
+    "cameras": {
+      "main": "cam_high",
+      "wrists": ["cam_left_wrist", "cam_right_wrist"],
+      "model_image_keys": [
+        "base_0_rgb",
+        "left_wrist_0_rgb",
+        "right_wrist_0_rgb"
+      ]
+    },
+    "source_fingerprints": [
+      {
+        "path": "rlinf/models/embodiment/openpi/dataconfig/__init__.py",
+        "sha256_lf": "757f65f7baf414bb6a63ee86ddfcd5745e5947728e4b6d942d235b508b0bb162",
+        "repository": "https://github.com/RLinf/RLinf",
+        "revision": "46213e88caa910a4a52e68bde4fb96416c1efa55",
+        "note": "Registers pi05_aloha_robotwin with Pi0Config(pi05=true, discrete_state_input=true) and the physical-intelligence/robotwin asset contract."
+      },
+      {
+        "path": "examples/embodiment/config/robotwin_adjust_bottle_ppo_openpi_pi05.yaml",
+        "sha256_lf": "c3b31c91840f5c3cea15185bc70e57cd099ed4dc65c0f1a964de31fb3ddc5d01",
+        "repository": "https://github.com/RLinf/RLinf",
+        "revision": "46213e88caa910a4a52e68bde4fb96416c1efa55",
+        "note": "Official RLinf adjust_bottle runtime declares num_action_chunks=50, action_dim=14, and three model images."
+      },
+      {
+        "path": "rlinf/models/embodiment/openpi/dataconfig/robotwin_aloha_dataconfig.py",
+        "sha256_lf": "2ceafb0798de7a9198ad8e12728f2af441f2c3f72c221b790b4f4867451797b1",
+        "repository": "https://github.com/RLinf/RLinf",
+        "revision": "12881eda376c8407bd85e4329e64b008d6aa9640",
+        "note": "File is byte-equivalent after LF normalization in release/v0.2 and latest main."
+      },
+      {
+        "path": "rlinf/models/embodiment/openpi/policies/aloha_policy.py",
+        "sha256_lf": "a1165b3d987fd021c67ce8722a2f86a150e3ebaf1340750ec6819bbe619c16c3",
+        "repository": "https://github.com/RLinf/RLinf",
+        "revision": "12881eda376c8407bd85e4329e64b008d6aa9640",
+        "note": "File is byte-equivalent after LF normalization in release/v0.2 and latest main."
+      }
+    ]
+  },
+  "publisher_config": {
+    "action_dim": 32,
+    "action_horizon": 10,
+    "paligemma_variant": "gemma_2b",
+    "action_expert_variant": "gemma_300m",
+    "precision": "bfloat16"
+  },
+  "files": [
+    {
+      "path": ".gitattributes",
+      "size": 1519,
+      "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+      "role": "repository_metadata"
+    },
+    {
+      "path": "assets/arx/norm_stats.json",
+      "size": 3476,
+      "sha256": "aeafc86107ab3acfa8ac166760ad2753e5f9be1cd9d516b144d7455e5bec5d00",
+      "role": "unselected_norm_stats"
+    },
+    {
+      "path": "assets/arx_mobile/norm_stats.json",
+      "size": 3677,
+      "sha256": "771a37e201d4ea74f478a5df11219cd9bcef9ce69a80f196d2b23625a04a3444",
+      "role": "unselected_norm_stats"
+    },
+    {
+      "path": "assets/droid/norm_stats.json",
+      "size": 2062,
+      "sha256": "508e75bb8f28f86ad8998a2254d2076fdd42caf26d8a89baecd5de0f628e2280",
+      "role": "unselected_norm_stats"
+    },
+    {
+      "path": "assets/fibocom_mobile/norm_stats.json",
+      "size": 3951,
+      "sha256": "25b4853b10da8546bdaa8c4a18836d3ab41637679c7b1797636d29585284660f",
+      "role": "unselected_incompatible_norm_stats_state15_action17"
+    },
+    {
+      "path": "assets/franka/norm_stats.json",
+      "size": 2081,
+      "sha256": "ddb8b0dcb9d869b7a152310ded9848c27857471d2999f70fd145ce7017b8d84f",
+      "role": "unselected_norm_stats"
+    },
+    {
+      "path": "assets/trossen/norm_stats.json",
+      "size": 3394,
+      "sha256": "417c7dc8ee9598b28dc2f0b545e371338be9f4611b255975ba7ea07eb21e46c1",
+      "role": "unselected_norm_stats"
+    },
+    {
+      "path": "assets/trossen_mobile/norm_stats.json",
+      "size": 3699,
+      "sha256": "3d817ca5af76f70a6eac6cee5963e521554a36558f627582f6edde389bb316c5",
+      "role": "unselected_norm_stats"
+    },
+    {
+      "path": "assets/ur5e/norm_stats.json",
+      "size": 1851,
+      "sha256": "dd8529da1dd320da9a0d40bebe16f6763f8f8dc99d6b8a60b698689b2ad08902",
+      "role": "unselected_norm_stats"
+    },
+    {
+      "path": "assets/ur5e_dual/norm_stats.json",
+      "size": 3459,
+      "sha256": "fe4b05d20e30066f9818e080bdfabaee2146046c69bd546e2384cf4eb1dd96e4",
+      "role": "unselected_norm_stats"
+    },
+    {
+      "path": "config.json",
+      "size": 149,
+      "sha256": "5c2728c53f4b33ee16380140f303713fdb5df78a8d26ee1489ace374fc54327a",
+      "role": "publisher_config"
+    },
+    {
+      "path": "model-00001-of-00003.safetensors",
+      "size": 4229965544,
+      "sha256": "193732b06782c0c6adbf94f16b8ecd6141a1a9d61004fd57c75cc2731c59fb07",
+      "role": "weights_shard"
+    },
+    {
+      "path": "model-00002-of-00003.safetensors",
+      "size": 4292225880,
+      "sha256": "23395e59338f279566a63836b3661e9b88369f6472762faa6afe0b4ed56a2e17",
+      "role": "weights_shard"
+    },
+    {
+      "path": "model-00003-of-00003.safetensors",
+      "size": 6951764,
+      "sha256": "ef74f46bff64a2c81b63a8fe380648c7d780b660f67e1c9ef9b4c5c874081f41",
+      "role": "weights_shard"
+    },
+    {
+      "path": "model.safetensors.index.json",
+      "size": 109565,
+      "sha256": "f8525c64ed662e1e186cd89343ff60d63f1c972347dd460cee27c32188bbf4b5",
+      "role": "weights_index"
+    },
+    {
+      "path": "physical-intelligence/libero/norm_stats.json",
+      "size": 4507,
+      "sha256": "dae37d79a22108af83df9189c6710a3ec8e077d65b28e34bdf1da724e5ae30f1",
+      "role": "unselected_norm_stats"
+    },
+    {
+      "path": "physical-intelligence/robotwin/norm_stats.json",
+      "size": 3464,
+      "sha256": "bff5fcadaba626c28c1c2350d3baa7f1a04befc9f8b73f3e558a09c1b9c6ee52",
+      "role": "selected_norm_stats"
+    }
+  ]
+}

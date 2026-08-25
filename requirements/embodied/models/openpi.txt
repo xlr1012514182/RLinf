@@ -1,0 +1,6 @@
+# Runtime pins backported from RLinf main@12881eda376c8407bd85e4329e64b008d6aa9640.
+# openpi pins JAX 0.5.3; Orbax 0.11.13 still imports
+# jax.experimental.layout.DeviceLocalLayout, removed in JAX >= 0.7.
+jax[cuda12]==0.5.3
+orbax-checkpoint==0.11.13
+tyro==1.0.13

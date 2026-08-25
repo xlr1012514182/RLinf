@@ -1,0 +1,79 @@
+{
+  "residual_rl": {
+    "enabled": false,
+    "feature_dim": 2048,
+    "action_horizon": 50,
+    "action_dim": 14,
+    "actor_hidden_dim": 447,
+    "actor_bottleneck_dim": 512,
+    "target_actor_parameters": 1820000,
+    "parameter_tolerance": 10000,
+    "ppo_epochs": 1
+  },
+  "speculative": {
+    "enabled": false,
+    "minimum_prefix": 2,
+    "fallback_acceptance_ratio": 0.25
+  },
+  "rtc": {
+    "enabled": false,
+    "execution_horizon": 8,
+    "queue_threshold": 2,
+    "overlap_horizon": 16,
+    "guidance_weight": 1.0,
+    "guidance_decay": 0.82
+  },
+  "robot": {
+    "backend": "dobot_nova",
+    "action_dim": 7,
+    "control_hz": 20.0,
+    "maximum_source_age_s": 1.0,
+    "maximum_generation_age_s": 0.75,
+    "maximum_observation_age_s": 0.5,
+    "maximum_state_camera_skew_ms": 75.0,
+    "joint_names": ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"],
+    "joint_lower": [-180, -180, -180, -180, -180, -180, 0],
+    "joint_upper": [180, 180, 180, 180, 180, 180, 1],
+    "max_step": [3, 3, 3, 3, 3, 3, 1],
+    "dry_run": true,
+    "action_adapter": {
+      "implementation": "rlinf.projects.fibocom_vla.hardware.robotwin_retargeting:create_robotwin_pi05_h50_retargeting_adapter",
+      "action_mode": "absolute",
+      "coordinate_modes": ["absolute", "absolute", "absolute", "absolute", "absolute", "absolute", "absolute", "absolute", "absolute", "absolute", "absolute", "absolute", "absolute", "absolute"],
+      "policy_frame": "joint",
+      "policy_dim": 14,
+      "policy_names": ["left_joint_1", "left_joint_2", "left_joint_3", "left_joint_4", "left_joint_5", "left_joint_6", "left_gripper", "right_joint_1", "right_joint_2", "right_joint_3", "right_joint_4", "right_joint_5", "right_joint_6", "right_gripper"],
+      "policy_units": ["radian", "radian", "radian", "radian", "radian", "radian", "normalized", "radian", "radian", "radian", "radian", "radian", "radian", "normalized"],
+      "policy_state_frame": "joint",
+      "policy_state_dim": 14,
+      "policy_state_names": ["left_joint_1", "left_joint_2", "left_joint_3", "left_joint_4", "left_joint_5", "left_joint_6", "left_gripper", "right_joint_1", "right_joint_2", "right_joint_3", "right_joint_4", "right_joint_5", "right_joint_6", "right_gripper"],
+      "required_cameras": ["cam_high", "cam_left_wrist", "cam_right_wrist"],
+      "robot_units": ["degree", "degree", "degree", "degree", "degree", "degree", "binary"],
+      "robot_from_policy": [],
+      "scale": [],
+      "offset": [],
+      "validated": false,
+      "calibration_id": "LOCKED_PLACEHOLDER_REQUIRES_MEASURED_NOVA_RETARGETING_CALIBRATION"
+    },
+    "options": {
+      "ip": "REPLACE_WITH_NOVA_CONTROLLER_IP",
+      "request_control": false,
+      "enable_on_connect": false,
+      "clear_error_on_connect": false,
+      "disable_on_disconnect": true,
+      "gripper_backend": "digital_output",
+      "gripper_do_index": 1,
+      "gripper_threshold": 0.5,
+      "gripper_feedback_backend": "commanded",
+      "gripper_di_index": 1,
+      "limits_require_hardware_validation": true,
+      "configuration_status": "LOCKED_PLACEHOLDER_DRY_RUN_ONLY",
+      "robotwin_retargeting_factory": "LOCKED_PLACEHOLDER_REPLACE_WITH_NOVA_ROBOTWIN_RETARGETING_MODULE:create_engine"
+    }
+  },
+  "cameras": [
+    {"name": "cam_high", "backend": "ros2_image", "width": 224, "height": 224, "fps": 30, "options": {"topic": "REPLACE_WITH_CAM_HIGH_TOPIC"}},
+    {"name": "cam_left_wrist", "backend": "ros2_image", "width": 224, "height": 224, "fps": 30, "options": {"topic": "REPLACE_WITH_LEFT_WRIST_TOPIC"}},
+    {"name": "cam_right_wrist", "backend": "ros2_image", "width": 224, "height": 224, "fps": 30, "options": {"topic": "REPLACE_WITH_RIGHT_WRIST_TOPIC"}}
+  ]
+}

@@ -18,6 +18,22 @@ import os
 import torch
 from omegaconf import DictConfig
 
+CHECKPOINT_LOAD_REPORT_ATTR = "_rlinf_checkpoint_load_report"
+
+
+def _load_state_dict_with_report(model, state_dict, *, source_kind, selected_paths):
+    """Load permissively while preserving every incompatible key for callers."""
+
+    incompatible = model.load_state_dict(state_dict, strict=False)
+    report = {
+        "source_kind": str(source_kind),
+        "selected_paths": tuple(os.path.abspath(path) for path in selected_paths),
+        "missing_keys": tuple(incompatible.missing_keys),
+        "unexpected_keys": tuple(incompatible.unexpected_keys),
+    }
+    setattr(model, CHECKPOINT_LOAD_REPORT_ATTR, report)
+    return report
+
 
 def get_model(cfg: DictConfig, torch_dtype=None):
     import glob
@@ -65,11 +81,21 @@ def get_model(cfg: DictConfig, torch_dtype=None):
     if os.path.exists(full_weights_path):
         # Direct checkpoint directory
         model_state_dict = torch.load(full_weights_path, map_location="cpu")
-        model.load_state_dict(model_state_dict, strict=False)
+        _load_state_dict_with_report(
+            model,
+            model_state_dict,
+            source_kind="model_state_dict_full_weights",
+            selected_paths=(full_weights_path,),
+        )
     elif os.path.exists(actor_full_weights_path):
         # Checkpoint directory from runner
         model_state_dict = torch.load(actor_full_weights_path, map_location="cpu")
-        model.load_state_dict(model_state_dict, strict=False)
+        _load_state_dict_with_report(
+            model,
+            model_state_dict,
+            source_kind="actor_model_state_dict_full_weights",
+            selected_paths=(actor_full_weights_path,),
+        )
     else:
         # Original model directory with safetensors files
         weight_paths = sorted(glob.glob(os.path.join(checkpoint_dir, "*.safetensors")))
@@ -78,8 +104,19 @@ def get_model(cfg: DictConfig, torch_dtype=None):
         all_state_dict = {}
         for weight_path in weight_paths:
             state_dict = safetensors.torch.load_file(weight_path, device="cpu")
+            duplicate_keys = sorted(set(all_state_dict).intersection(state_dict))
+            if duplicate_keys:
+                raise ValueError(
+                    "duplicate tensors across safetensors shards: "
+                    + ", ".join(duplicate_keys[:10])
+                )
             all_state_dict.update(state_dict)
-        model.load_state_dict(all_state_dict, strict=False)
+        _load_state_dict_with_report(
+            model,
+            all_state_dict,
+            source_kind="safetensors_shards",
+            selected_paths=tuple(weight_paths),
+        )
 
     model.paligemma_with_expert.to_bfloat16_for_selected_params("bfloat16")
     # fsdp replace
@@ -88,6 +125,14 @@ def get_model(cfg: DictConfig, torch_dtype=None):
     data_config = actor_train_config.data.create(
         actor_train_config.assets_dirs, actor_model_config
     )
+    load_report = dict(getattr(model, CHECKPOINT_LOAD_REPORT_ATTR))
+    load_report.update(
+        {
+            "data_asset_id": data_config.asset_id,
+            "use_quantile_norm": bool(data_config.use_quantile_norm),
+        }
+    )
+    setattr(model, CHECKPOINT_LOAD_REPORT_ATTR, load_report)
     norm_stats = None
     if norm_stats is None:
         # We are loading the norm stats from the checkpoint instead of the config assets dir to make sure
