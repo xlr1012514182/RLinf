@@ -4,11 +4,6 @@
 
 ### Frozen-Backbone Residual RL · Continuous-Action Speculative Inference · CUDA/TensorRT Diagnostics · RTC · Robot Adapters
 
-[![Python 3.11.14](https://img.shields.io/badge/Python-3.11.14-3776AB?logo=python&logoColor=white)](requirements/fibocom_vla_quickstart.sh)
-[![PyTorch 2.6 CPU](https://img.shields.io/badge/PyTorch-2.6%20CPU-EE4C2C?logo=pytorch&logoColor=white)](requirements/fibocom_vla_quickstart.txt)
-[![Status](https://img.shields.io/badge/status-component--verified-yellow)](docs/fibocom_vla_evidence/claim_boundary.md)
-[![CPU smoke](https://img.shields.io/badge/CPU%20smoke-317%20passed%20%7C%205%20skipped-blue)](docs/fibocom_vla_evidence/quickstart_validation_20260826.md)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
 [简体中文](README_ZH.md) · [Full implementation guide](examples/embodiment/fibocom_vla/README.md) · [Upstream RLinf](https://github.com/RLinf/RLinf)
 
