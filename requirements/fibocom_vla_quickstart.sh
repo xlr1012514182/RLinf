@@ -45,6 +45,7 @@ if [[ ! -x "${UV_BIN}" ]]; then
     mkdir -p "${TOOLS_DIR}"
     python3 -m pip install \
         --disable-pip-version-check \
+        --index-url "https://pypi.org/simple" \
         --no-warn-script-location \
         --upgrade \
         --target "${TOOLS_DIR}" \
@@ -73,6 +74,7 @@ if [[ "${observed_python_version}" != "${PYTHON_VERSION}" ]]; then
 fi
 
 "${UV_BIN}" pip sync \
+    --default-index "https://pypi.org/simple" \
     --python "${PYTHON_BIN}" \
     "${REQUIREMENTS_FILE}"
 
