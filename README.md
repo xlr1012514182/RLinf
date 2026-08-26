@@ -34,19 +34,35 @@ registered RLinf H=50 runtime, official RoboTwin YAML, normalization statistics,
 camera mapping, and Aloha transforms through SHA-256 hashes and source
 fingerprints.
 
-## Safe Quick Start
+## Fresh-Clone Quick Start
+
+The block below is designed for a clean Ubuntu/WSL2 x86_64 checkout and uses
+only CPU execution. It requires Git, Bash, `python3` with `pip`, and network
+access. It does not require CUDA, model checkpoints, ROS2, or a robot SDK.
+Run the complete block from a Bash shell:
 
 ```bash
-bash requirements/install.sh embodied --model openpi --env robotwin --install-rlinf
+git clone --branch feat/fibocom-vla-stack --single-branch \
+  https://github.com/xlr1012514182/RLinf.git
+cd RLinf
 
-python -m rlinf.projects.fibocom_vla.cli validate-config \
+bash requirements/fibocom_vla_quickstart.sh
+
+.venv-fibocom/bin/python -m rlinf.projects.fibocom_vla.cli validate-config \
   --config examples/embodiment/fibocom_vla/config/robotwin_pi05_h50_dry_run.json
 
-python -m rlinf.projects.fibocom_vla.cli mock-smoke \
+.venv-fibocom/bin/python -m rlinf.projects.fibocom_vla.cli mock-smoke \
   --config examples/embodiment/fibocom_vla/config/mock.json --steps 16
 
-python -m pytest -q tests/unit_tests/projects/fibocom_vla
+.venv-fibocom/bin/python -m pytest -q tests/unit_tests/projects/fibocom_vla
 ```
+
+The bootstrap pins Python 3.11.14, CPU PyTorch, the RLinf OpenPI Transformers
+fork, and every dependency used by this smoke/test path in a repository-local
+`.venv-fibocom`. No shell activation is required. This path verifies
+configuration, Mock runtime, and unit-test plumbing only. Full OpenPI/RoboTwin,
+CUDA/TensorRT, checkpoint, ROS2, and physical-robot setup requires the
+platform-specific prerequisites described in the implementation guide.
 
 ## Documentation and Evidence
 

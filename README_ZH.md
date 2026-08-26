@@ -32,19 +32,33 @@ Publisher checkpoint metadata 记录的是 H=10。本仓不修改这些字节，
 原始权重，再通过 SHA-256/源码指纹单独绑定 RLinf 已注册 H=50 运行时、
 官方 RoboTwin YAML、norm stats、相机映射和 Aloha transform。
 
-## 安全 Quick Start
+## 全新 Clone 后直接运行
+
+以下代码块面向全新 Ubuntu/WSL2 x86_64 检出，仅使用 CPU。前置要求为
+Git、Bash、带 `pip` 的 `python3` 和网络连接；不需要 CUDA、模型
+checkpoint、ROS2 或机器人 SDK。请在 Bash 中完整执行：
 
 ```bash
-bash requirements/install.sh embodied --model openpi --env robotwin --install-rlinf
+git clone --branch feat/fibocom-vla-stack --single-branch \
+  https://github.com/xlr1012514182/RLinf.git
+cd RLinf
 
-python -m rlinf.projects.fibocom_vla.cli validate-config \
+bash requirements/fibocom_vla_quickstart.sh
+
+.venv-fibocom/bin/python -m rlinf.projects.fibocom_vla.cli validate-config \
   --config examples/embodiment/fibocom_vla/config/robotwin_pi05_h50_dry_run.json
 
-python -m rlinf.projects.fibocom_vla.cli mock-smoke \
+.venv-fibocom/bin/python -m rlinf.projects.fibocom_vla.cli mock-smoke \
   --config examples/embodiment/fibocom_vla/config/mock.json --steps 16
 
-python -m pytest -q tests/unit_tests/projects/fibocom_vla
+.venv-fibocom/bin/python -m pytest -q tests/unit_tests/projects/fibocom_vla
 ```
+
+Bootstrap 会在仓库本地的 `.venv-fibocom` 中锁定 Python 3.11.14、
+CPU PyTorch、RLinf OpenPI Transformers fork 以及该 smoke/test 路径使用的
+全部依赖，不需要激活 shell。该路径只验证配置、Mock runtime 和单元测试
+plumbing。完整 OpenPI/RoboTwin、CUDA/TensorRT、checkpoint、ROS2 与真机
+部署仍需满足完整实现指南中的平台专用前置条件。
 
 ## 文档与证据
 
