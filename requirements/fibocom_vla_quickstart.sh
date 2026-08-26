@@ -18,11 +18,15 @@ set -euo pipefail
 
 readonly UV_VERSION="0.12.6"
 readonly PYTHON_VERSION="3.11.14"
+readonly DEFAULT_PYTHON_INSTALL_MIRROR="https://ghfast.top/https://github.com/astral-sh/python-build-standalone/releases/download"
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPOSITORY_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd -P)"
 TOOLS_DIR="${REPOSITORY_ROOT}/.fibocom-tools/uv-${UV_VERSION}"
 UV_BIN="${TOOLS_DIR}/bin/uv"
+PYTHON_INSTALL_DIR="${TOOLS_DIR}/python"
+MANAGED_PYTHON_BIN="${PYTHON_INSTALL_DIR}/cpython-${PYTHON_VERSION}-linux-x86_64-gnu/bin/python3.11"
+PYTHON_INSTALL_MIRROR="${FIBOCOM_PYTHON_INSTALL_MIRROR:-${DEFAULT_PYTHON_INSTALL_MIRROR}}"
 VENV_DIR="${FIBOCOM_VENV_DIR:-${REPOSITORY_ROOT}/.venv-fibocom}"
 PYTHON_BIN="${VENV_DIR}/bin/python"
 REQUIREMENTS_FILE="${SCRIPT_DIR}/fibocom_vla_quickstart.txt"
@@ -63,7 +67,14 @@ if [[ -e "${VENV_DIR}" && ! -x "${PYTHON_BIN}" ]]; then
     exit 1
 fi
 if [[ ! -x "${PYTHON_BIN}" ]]; then
-    "${UV_BIN}" venv "${VENV_DIR}" --python "${PYTHON_VERSION}"
+    if [[ ! -x "${MANAGED_PYTHON_BIN}" ]]; then
+        "${UV_BIN}" python install "${PYTHON_VERSION}" \
+            --cache-dir "${TOOLS_DIR}/cache" \
+            --install-dir "${PYTHON_INSTALL_DIR}" \
+            --mirror "${PYTHON_INSTALL_MIRROR}" \
+            --no-bin
+    fi
+    "${UV_BIN}" venv "${VENV_DIR}" --python "${MANAGED_PYTHON_BIN}"
 fi
 
 observed_python_version="$("${PYTHON_BIN}" -c 'import platform; print(platform.python_version())')"
