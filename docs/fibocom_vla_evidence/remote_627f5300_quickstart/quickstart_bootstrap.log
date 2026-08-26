@@ -1,0 +1,70 @@
+Collecting uv==0.12.6
+  Using cached uv-0.12.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (11 kB)
+Using cached uv-0.12.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (20.9 MB)
+Installing collected packages: uv
+Successfully installed uv-0.12.6
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv
+Downloading cpython-3.11.14-linux-x86_64-gnu (download) (29.8MiB)
+ Downloaded cpython-3.11.14-linux-x86_64-gnu (download)
+Installed Python 3.11.14 in 10.74s
+ + cpython-3.11.14-linux-x86_64-gnu
+Using CPython 3.11.14 interpreter at: .fibocom-tools/uv-0.12.6/python/cpython-3.11.14-linux-x86_64-gnu/bin/python3.11
+Creating virtual environment at: .venv-fibocom
+Activate with: source .venv-fibocom/bin/activate
+Using Python 3.11.14 environment at: .venv-fibocom
+Resolved 32 packages in 2.66s
+Downloading torch (170.4MiB)
+Downloading networkx (2.0MiB)
+Downloading hf-xet (4.3MiB)
+Downloading cryptography (4.5MiB)
+Downloading sympy (5.9MiB)
+Downloading numpy (17.4MiB)
+Downloading rlinf-transformer-openpi (10.3MiB)
+Downloading tokenizers (3.0MiB)
+ Downloaded networkx
+ Downloaded tokenizers
+ Downloaded hf-xet
+ Downloaded cryptography
+ Downloaded sympy
+ Downloaded rlinf-transformer-openpi
+ Downloaded numpy
+ Downloaded torch
+Prepared 32 packages in 25.18s
+warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance.
+         If the cache and target directories are on different filesystems, hardlinking may not be supported.
+         If this is intentional, set `export UV_LINK_MODE=copy` or use `--link-mode=copy` to suppress this warning.
+Installed 32 packages in 1.68s
+ + certifi==2026.7.22
+ + cffi==2.1.1
+ + charset-normalizer==3.5.1
+ + cryptography==50.0.1
+ + filelock==3.32.3
+ + fsspec==2026.7.0
+ + hf-xet==1.6.1a0
+ + huggingface-hub==0.36.2
+ + idna==3.19
+ + iniconfig==2.3.0
+ + jinja2==3.1.6
+ + markupsafe==3.0.3
+ + mpmath==1.3.0
+ + networkx==3.6.1
+ + numpy==1.26.4
+ + omegaconf==2.4.0.dev4
+ + packaging==26.3
+ + pluggy==1.6.0
+ + pycparser==3.0
+ + pytest==8.3.5
+ + pyyaml==6.0.3
+ + regex==2026.7.19
+ + requests==2.34.2
+ + rlinf-transformer-openpi==4.53.2
+ + safetensors==0.8.0
+ + setuptools==70.2.0
+ + sympy==1.13.1
+ + tokenizers==0.21.4
+ + torch==2.6.0+cpu (from https://download.pytorch.org/whl/cpu/torch-2.6.0%2Bcpu-cp311-cp311-linux_x86_64.whl)
+ + tqdm==4.70.0
+ + typing-extensions==4.16.0
+ + urllib3==2.7.0
+Fibocom CPU quick-start environment is ready.
+Interpreter: /root/autodl-tmp/codex_fibocom_quickstart_20260826_627f5300_mirror/RLinf/.venv-fibocom/bin/python

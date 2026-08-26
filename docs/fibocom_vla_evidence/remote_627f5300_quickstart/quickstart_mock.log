@@ -1,0 +1,40 @@
+2026-08-26 10:09:15,640 INFO rlinf.projects.fibocom_vla.hardware.base: dry-run: suppressing hardware stop command
+{
+  "control_steps": 16,
+  "chunks": 2,
+  "stopped_early": false,
+  "stop_reason": "maximum_control_steps",
+  "metrics": {
+    "latencies": {
+      "model_latency_ms": {
+        "count": 3,
+        "mean_ms": 0.31076566666666666,
+        "p50_ms": 0.273866,
+        "p95_ms": 0.418775,
+        "maximum_ms": 0.434876
+      },
+      "rtc/planner_queue_wait_ms": {
+        "count": 3,
+        "mean_ms": 0.17815066666666668,
+        "p50_ms": 0.128536,
+        "p95_ms": 0.32535699999999995,
+        "maximum_ms": 0.347226
+      },
+      "robot_wait_ms": {
+        "count": 2,
+        "mean_ms": 1.1270688846707344,
+        "p50_ms": 1.1270688846707344,
+        "p95_ms": 2.1150446496903896,
+        "maximum_ms": 2.2248197346925735
+      },
+      "control_loop_ms": {
+        "count": 16,
+        "mean_ms": 49.98970101587474,
+        "p50_ms": 49.98293798416853,
+        "p95_ms": 50.07977597415447,
+        "maximum_ms": 50.08838698267937
+      }
+    },
+    "counters": {}
+  }
+}

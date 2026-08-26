@@ -1,10 +1,10 @@
 {
   "path": "docs/fibocom_vla_evidence/reproduction_matrix.csv",
-  "rows": 31,
+  "rows": 36,
   "outcome": "component-verified",
   "require_reviewed": true,
   "errors": [],
   "warnings": [],
   "validated_on": "2026-08-26",
-  "implementation_commit": "b75f92b4188d3a7276d772a5e0af09c252fe1790"
+  "implementation_commit": "627f53006f31906b453658cf91347b98b40cd7ee"
 }

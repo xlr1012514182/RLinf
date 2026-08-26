@@ -69,6 +69,7 @@ plumbing。完整 OpenPI/RoboTwin、CUDA/TensorRT、checkpoint、ROS2 与真机
 - [固定来源身份](docs/fibocom_vla_evidence/source_lock.json)
 - [当前本地验证记录](docs/fibocom_vla_evidence/local_validation_20260826.md)
 - [当前远程验证记录](docs/fibocom_vla_evidence/remote_validation_20260826.md)
+- [全新 Clone Quick Start 验证](docs/fibocom_vla_evidence/quickstart_validation_20260826.md)
 
 ## 上游血缘与许可
 

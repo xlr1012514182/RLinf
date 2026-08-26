@@ -36,6 +36,10 @@ fingerprints.
 
 ## Fresh-Clone Quick Start
 
+The block below is designed for a clean Ubuntu/WSL2 x86_64 checkout and uses
+only CPU execution. It requires Git, Bash, `python3` with `pip`, and network
+access. It does not require CUDA, model checkpoints, ROS2, or a robot SDK.
+Run the complete block from a Bash shell:
 
 ```bash
 git clone --branch feat/fibocom-vla-stack --single-branch \
@@ -53,6 +57,12 @@ bash requirements/fibocom_vla_quickstart.sh
 .venv-fibocom/bin/python -m pytest -q tests/unit_tests/projects/fibocom_vla
 ```
 
+The bootstrap pins Python 3.11.14, CPU PyTorch, the RLinf OpenPI Transformers
+fork, and every dependency used by this smoke/test path in a repository-local
+`.venv-fibocom`. No shell activation is required. This path verifies
+configuration, Mock runtime, and unit-test plumbing only. Full OpenPI/RoboTwin,
+CUDA/TensorRT, checkpoint, ROS2, and physical-robot setup requires the
+platform-specific prerequisites described in the implementation guide.
 
 ## Documentation and Evidence
 
@@ -63,6 +73,7 @@ bash requirements/fibocom_vla_quickstart.sh
 - [Pinned Source Identities](docs/fibocom_vla_evidence/source_lock.json)
 - [Current Local Validation Record](docs/fibocom_vla_evidence/local_validation_20260826.md)
 - [Current Remote Validation Record](docs/fibocom_vla_evidence/remote_validation_20260826.md)
+- [Fresh-Clone Quick Start Validation](docs/fibocom_vla_evidence/quickstart_validation_20260826.md)
 
 ## Upstream Lineage and License
 

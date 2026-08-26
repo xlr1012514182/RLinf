@@ -1,0 +1,40 @@
+2026-08-26T10:09:57+08:00
+Linux autodl-container-21g4fxwtef-9d6fecc5 5.15.0-25-generic #25-Ubuntu SMP Wed Mar 30 15:54:22 UTC 2022 x86_64 x86_64 x86_64 GNU/Linux
+627f53006f31906b453658cf91347b98b40cd7ee
+https://ghfast.top/https://github.com/xlr1012514182/RLinf.git
+Python 3.11.14
+uv 0.12.6 (x86_64-unknown-linux-gnu)
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.1
+cryptography==50.0.1
+filelock==3.32.3
+fsspec==2026.7.0
+hf-xet==1.6.1a0
+huggingface-hub==0.36.2
+idna==3.19
+iniconfig==2.3.0
+jinja2==3.1.6
+markupsafe==3.0.3
+mpmath==1.3.0
+networkx==3.6.1
+numpy==1.26.4
+omegaconf==2.4.0.dev4
+packaging==26.3
+pluggy==1.6.0
+pycparser==3.0
+pytest==8.3.5
+pyyaml==6.0.3
+regex==2026.7.19
+requests==2.34.2
+rlinf-transformer-openpi==4.53.2
+safetensors==0.8.0
+setuptools==70.2.0
+sympy==1.13.1
+tokenizers==0.21.4
+torch @ https://download.pytorch.org/whl/cpu/torch-2.6.0%2Bcpu-cp311-cp311-linux_x86_64.whl
+tqdm==4.70.0
+typing-extensions==4.16.0
+urllib3==2.7.0
+pipefail       	on
+0, NVIDIA GeForce RTX 4080 SUPER, 32760 MiB, 0 MiB, 0 %, 580.105.08
