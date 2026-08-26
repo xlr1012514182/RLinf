@@ -4,9 +4,6 @@
 
 ### 冻结基座残差 RL · 连续动作 Speculative Inference · CUDA/TensorRT 诊断 · RTC · 机器人适配
 
-[![Python 3.11.14](https://img.shields.io/badge/Python-3.11.14-3776AB?logo=python&logoColor=white)](requirements/fibocom_vla_quickstart.sh)
-
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
 [English](README.md) · [完整实现指南](examples/embodiment/fibocom_vla/README_ZH.md) · [上游 RLinf](https://github.com/RLinf/RLinf)
 
