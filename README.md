@@ -16,27 +16,6 @@ This codebase connects a frozen π0.5 policy to residual post-training, action-c
 
 The repository distributes **source code, runtime asset manifests, configuration templates, tests, and benchmark programs**. Model weights, task data, deployment calibration, and run artifacts are provided separately.
 
-## Architecture
-
-```text
-Synchronized cameras + robot state + instruction
-                        │
-             Observation / model contract
-                        │
-            ┌───────────┼─────────────┐
-            │           │             │
-       Frozen π0.5   π0.5 + bounded  π0.5 + approved
-        base policy  residual actor  Draft / verifier
-            └───────────┼─────────────┘
-                        │
-          Action chunks / asynchronous planning
-                        │
-           Calibrated adapter / safety checks
-                        │
-                 Robot backend
-```
-
-Select one of the three policy branches; residual and speculative modes are mutually exclusive. Native model-space RTC is available only on paths that preserve the corresponding action lineage. Wrapped policies and nonlinear retargeting use an explicitly labeled host action-space fallback.
 
 ## Core components
 
