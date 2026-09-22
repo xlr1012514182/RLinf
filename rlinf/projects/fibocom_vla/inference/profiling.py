@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Evidence-oriented latency profiling for VLA inference paths.
+"""Measured latency profiling for VLA inference paths.
 
-The utilities in this module deliberately keep observed benchmark samples
-separate from historical evidence.  In particular, the StarVLA/Qwen3-VL
-numbers recorded below are not defaults and are never injected into a live
-benchmark report.
+Benchmark reports contain samples collected by the current invocation.
+External timing annotations can be supplied explicitly with
+``ExternalTimingEvidence``; no historical measurements are bundled here.
 """
 
 from __future__ import annotations
@@ -61,19 +60,6 @@ class ExternalTimingEvidence:
     exactness_observation: str
     source_locator: str
     eligible_as_default: bool = False
-
-
-EXTERNAL_STARVLA_VISUAL_CUDAGRAPH_EVIDENCE = ExternalTimingEvidence(
-    evidence_id="session-019fe3f8-exp027",
-    system="StarVLA/Qwen3-VL visual subgraph (not pi0.5)",
-    optimization="shape-stable visual CUDA Graph with eager fallback",
-    baseline_ms=48.1572,
-    candidate_ms=42.7936,
-    timing_boundary="historical StarVLA inference-path measurement",
-    exactness_observation="historical report states bit-exact output",
-    source_locator="Codex session 019fe3f8-9cb9-7382-9c74-29392ba85a63, EXP027",
-    eligible_as_default=False,
-)
 
 
 def _coerce_path(value: InferencePath | str) -> InferencePath:
@@ -468,7 +454,6 @@ def paired_alternating_benchmark(
 
 
 __all__ = [
-    "EXTERNAL_STARVLA_VISUAL_CUDAGRAPH_EVIDENCE",
     "ExternalTimingEvidence",
     "InferencePath",
     "LatencySummary",

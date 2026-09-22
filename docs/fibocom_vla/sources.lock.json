@@ -1,16 +1,16 @@
 {
-  "generated_date": "2026-08-25",
+  "schema_version": 1,
+  "scope": "source_identity_and_runtime_dependencies",
   "implementation_base": {
     "repository": "https://github.com/RLinf/RLinf",
     "branch": "release/v0.2",
     "commit": "46213e88caa910a4a52e68bde4fb96416c1efa55"
   },
-  "comparison_sources": [
+  "design_references": [
     {
       "repository": "https://github.com/RLinf/RLinf",
       "branch": "main",
-      "commit": "12881eda376c8407bd85e4329e64b008d6aa9640",
-      "verified_by": "git ls-remote refs/heads/main on 2026-08-26"
+      "commit": "12881eda376c8407bd85e4329e64b008d6aa9640"
     },
     {
       "repository": "https://github.com/flashrt-project/FlashRT",
@@ -23,13 +23,12 @@
       "commit": "da6ceccad603695a8a3d6fa14dd410c3aadb536f"
     }
   ],
-  "hardware_sources": [
+  "hardware_references": [
     {
       "repository": "https://github.com/huggingface/lerobot",
       "runtime_tag": "v0.4.4",
       "runtime_commit": "8fff0fde7c79f23a93d845d1a50e985de01f8b8a",
-      "latest_review_commit": "bf31dd794ffb4f87380aba3912f64421e8352d3c",
-      "note": "v0.4.4 supports Python >=3.10; current main requires Python >=3.12"
+      "additional_reference_commit": "bf31dd794ffb4f87380aba3912f64421e8352d3c"
     },
     {
       "repository": "https://github.com/Dobot-Arm/TCP-IP-Python-V4",
@@ -47,21 +46,14 @@
       "commit": "60c850958d651130fc2cc3d10efb37ff5be93da5"
     }
   ],
-  "local_sources": [
-    {
-      "name": "RL_rlt_Last-R1.zip",
-      "sha256": "041e65bb38eddc755c6ba8f93425bdf824b3cd797c9b4ecc32e30113ad931956"
-    },
-    {
-      "name": "Codex task 019fe3f8-9cb9-7382-9c74-29392ba85a63",
-      "reviewed_turns": 95,
-      "reviewed_pages": 10,
-      "hashed_artifacts": 52,
-      "hash_mismatches": 0
-    },
-    {
-      "name": "RoboDojo V11 synchronized archive",
-      "sha256": "456a817b3a1355d72fcfc8f43856d61c0a1aed53338a3ac2b8810dc9b09b9b9f"
-    }
+  "model_contracts": [
+    "examples/embodiment/fibocom_vla/assets/rlinf_pi05_robotwin_adjust_bottle_h50.json",
+    "examples/embodiment/fibocom_vla/assets/dexmal_flash_pi0_libero_drafts.json"
+  ],
+  "dependency_files": [
+    "requirements/fibocom_vla_quickstart.txt",
+    "requirements/fibocom_vla_quickstart.sh",
+    "requirements/embodied/models/openpi.txt",
+    "pyproject.toml"
   ]
 }

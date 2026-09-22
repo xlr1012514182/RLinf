@@ -21,3 +21,23 @@ outputs/*
 uv.lock
 rlinf/envs/maniskill/assets
 PKG-INFO
+
+# Local test and analysis caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Generated run assets: source manifests under examples/ remain tracked
+/artifacts/
+/runs/
+/checkpoints/
+/wandb/
+/docs/fibocom_vla_evidence/
+
+# Machine-local configuration and credentials
+/.env
+/.env.*
+!/.env.example

@@ -23,8 +23,9 @@ import pytest
 import torch
 
 from rlinf.projects.fibocom_vla.errors import OptionalDependencyError
+from rlinf.projects.fibocom_vla.inference import profiling
 from rlinf.projects.fibocom_vla.inference.profiling import (
-    EXTERNAL_STARVLA_VISUAL_CUDAGRAPH_EVIDENCE,
+    ExternalTimingEvidence,
     InferencePath,
     StageProfiler,
     StageSpec,
@@ -181,14 +182,34 @@ def test_paired_benchmark_alternates_ab_ba_and_preserves_negative_delta() -> Non
     assert report.median_speedup == pytest.approx(2.0)
 
 
-def test_starvla_timing_is_external_and_never_a_benchmark_default() -> None:
-    evidence = EXTERNAL_STARVLA_VISUAL_CUDAGRAPH_EVIDENCE
+def test_external_timing_annotation_does_not_supply_benchmark_samples() -> None:
+    assert all(hasattr(profiling, name) for name in profiling.__all__)
+    evidence = ExternalTimingEvidence(
+        evidence_id="synthetic-unit-test-only",
+        system="synthetic external fixture; not a model measurement",
+        optimization="synthetic candidate",
+        baseline_ms=999.0,
+        candidate_ms=111.0,
+        timing_boundary="synthetic test fixture",
+        exactness_observation="not evaluated",
+        source_locator="test_external_timing_annotation_does_not_supply_benchmark_samples",
+    )
 
-    assert evidence.system.startswith("StarVLA/Qwen3-VL")
-    assert "not pi0.5" in evidence.system
     assert evidence.eligible_as_default is False
-    assert evidence.baseline_ms == pytest.approx(48.1572)
-    assert evidence.candidate_ms == pytest.approx(42.7936)
+    report = paired_alternating_benchmark(
+        lambda: None,
+        lambda: None,
+        benchmark_name="synthetic-current-invocation",
+        paths=(InferencePath.VISUAL,),
+        warmup_pairs=0,
+        measured_pairs=2,
+        clock_ns=_IncrementingClock(1_000_000),
+    )
+
+    assert report.baseline.p50_ms == pytest.approx(1.0)
+    assert report.candidate.p50_ms == pytest.approx(1.0)
+    assert report.baseline.p50_ms != evidence.baseline_ms
+    assert report.candidate.p50_ms != evidence.candidate_ms
 
 
 def test_tensor_comparison_reports_exact_abs_rel_and_ulp_diagnostics() -> None:
